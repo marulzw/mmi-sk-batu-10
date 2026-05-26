@@ -48,6 +48,99 @@ function csvEscape(value) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+function getTahunKelas(namaKelas) {
+  const match = String(namaKelas || "").match(/\d+/);
+  return match ? Number(match[0]) : null;
+}
+
+function getWaktuAkhirPdP(kelas, hari) {
+  const tahun = getTahunKelas(kelas);
+
+  if ([1, 2, 3].includes(tahun)) {
+    if (["Isnin", "Selasa", "Rabu"].includes(hari)) return "12:05 - 12:35";
+    if (hari === "Khamis") return "11:35 - 12:05";
+    if (hari === "Jumaat") return "11:05 - 11:35";
+  }
+
+  if ([4, 5, 6].includes(tahun)) {
+    if (["Isnin", "Selasa"].includes(hari)) return "12:35 - 13:05";
+    if (["Rabu", "Khamis"].includes(hari)) return "12:05 - 12:35";
+    if (hari === "Jumaat") return "11:05 - 11:35";
+  }
+
+  return "12:35 - 13:05";
+}
+
+function getWaktuWajibKelas(kelas, hari) {
+  const waktuAkhir = getWaktuAkhirPdP(kelas, hari);
+  const indexAkhir = masaList.indexOf(waktuAkhir);
+
+  if (indexAkhir < 0) {
+    return masaList.filter((masa) => !masa.includes("REHAT"));
+  }
+
+  return masaList
+    .slice(0, indexAkhir + 1)
+    .filter((masa) => !masa.includes("REHAT"));
+}
+
+function getMasaPaparanKelas(kelas, hari) {
+  if (!kelas) return masaList;
+
+  const waktuAkhir = getWaktuAkhirPdP(kelas, hari);
+  const indexAkhir = masaList.indexOf(waktuAkhir);
+
+  if (indexAkhir < 0) return masaList;
+
+  return masaList.slice(0, indexAkhir + 1);
+}
+
+function kiraKehadiranWaktuKelas(kelas, hari, tarikh, rekod) {
+  const waktuWajib = getWaktuWajibKelas(kelas, hari);
+  const jumlahWaktu = waktuWajib.length;
+
+  const waktuDaftar = waktuWajib.reduce((jumlah, waktu) => {
+    const isPerhimpunanSelasa =
+      hari === "Selasa" && waktu === "7:15 - 7:45";
+
+    const adaRekod = rekod.some(
+      (item) =>
+        item.tarikh === tarikh &&
+        item.kelas === kelas &&
+        String(item.masa || "").includes(waktu)
+    );
+
+    return isPerhimpunanSelasa || adaRekod ? jumlah + 1 : jumlah;
+  }, 0);
+
+  const waktuTidakDaftar = Math.max(jumlahWaktu - waktuDaftar, 0);
+
+  const senaraiWaktuTidakDaftar = waktuWajib.filter((waktu) => {
+    const isPerhimpunanSelasa =
+      hari === "Selasa" && waktu === "7:15 - 7:45";
+
+    const adaRekod = rekod.some(
+      (item) =>
+        item.tarikh === tarikh &&
+        item.kelas === kelas &&
+        String(item.masa || "").includes(waktu)
+    );
+
+    return !(isPerhimpunanSelasa || adaRekod);
+  });
+
+  return {
+    jumlahWaktu,
+    waktuDaftar,
+    waktuTidakDaftar,
+    senaraiWaktuTidakDaftar,
+    peratusDaftar:
+      jumlahWaktu > 0 ? ((waktuDaftar / jumlahWaktu) * 100).toFixed(1) : "0.0",
+    peratusTidakDaftar:
+      jumlahWaktu > 0 ? ((waktuTidakDaftar / jumlahWaktu) * 100).toFixed(1) : "0.0",
+  };
+}
+
 export default function BorangMMIApp() {
   const [form, setForm] = useState({ kelas: "", guru: "", masa: [], jenisGuru: "Guru Mata Pelajaran" });
   const [rekod, setRekod] = useState([]);
@@ -143,6 +236,20 @@ const [senaraiLaporan, setSenaraiLaporan] = useState([]);
   const today = getTodayInfo();
   const kelasNames = useMemo(() => kelasList.map((kelas) => kelas.nama), [kelasList]);
 
+  const masaListPaparan = useMemo(
+    () => getMasaPaparanKelas(form.kelas, today.hari),
+    [form.kelas, today.hari]
+  );
+
+  const rekodHariIni = useMemo(
+    () => rekod.filter((item) => item.tarikh === today.tarikh),
+    [rekod, today.tarikh]
+  );
+
+  const semuaKelasTiadaRekodHariIni =
+    kelasNames.length > 0 && rekodHariIni.length === 0;
+
+
   const filteredRekod = useMemo(() => {
   let data = rekod;
 
@@ -175,18 +282,26 @@ data = data.filter((item) => item.tarikh === today.tarikh);
   return [...data].sort((a, b) => getMasaMula(a) - getMasaMula(b));
 }, [rekod, search, selectedKelas, today.tarikh]);
 
-  const jumlahHariIni = rekod.filter((item) => item.tarikh === today.tarikh).length;
+  const jumlahHariIni = rekodHariIni.length;
   const jumlahSitIn = rekod.filter((item) => item.jenisGuru === "Guru Sit-in").length;
 
   const analisisKelas = useMemo(() => kelasNames.map((kelas) => {
     const dataKelas = rekod.filter((item) => item.kelas === kelas);
+    const statistikWaktu = kiraKehadiranWaktuKelas(
+      kelas,
+      today.hari,
+      today.tarikh,
+      rekod
+    );
+
     return {
       kelas,
       jumlah: dataKelas.length,
       guruMP: dataKelas.filter((item) => item.jenisGuru === "Guru Mata Pelajaran").length,
-      sitIn: dataKelas.filter((item) => item.jenisGuru === "Guru Sit-in").length
+      sitIn: dataKelas.filter((item) => item.jenisGuru === "Guru Sit-in").length,
+      ...statistikWaktu
     };
-  }), [rekod, kelasNames]);
+  }), [rekod, kelasNames, today.hari, today.tarikh]);
 
   const analisisDipilih = selectedKelas ? analisisKelas.filter((item) => item.kelas === selectedKelas) : analisisKelas;
 
@@ -214,16 +329,43 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     return `${parts[1]}/${parts[2]}`;
   }
 
+  function getHariFromTarikh(tarikh) {
+    const parts = String(tarikh || "").split("/");
+    if (parts.length !== 3) return "";
+    const [day, month, year] = parts.map(Number);
+    const date = new Date(year, month - 1, day);
+    return hariBM[date.getDay()] || "";
+  }
+
   const laporanBulanan = useMemo(() => {
-    const totalSlot = masaList.filter((m) => !m.includes("REHAT")).length;
     const group = {};
 
     rekod.forEach((item) => {
       const bulan = getMonthYear(item.tarikh);
-      if (!group[bulan]) group[bulan] = { bulan, jumlah: 0, guruMP: 0, sitIn: 0, kelas: {}, guruSitIn: {}, guruMasuk: {}, kelasSitIn: {}, kelasKosong: {} };
+      if (!group[bulan]) {
+        group[bulan] = {
+          bulan,
+          jumlah: 0,
+          guruMP: 0,
+          sitIn: 0,
+          kelas: {},
+          guruSitIn: {},
+          guruMasuk: {},
+          kelasSitIn: {},
+          kelasKosong: {},
+          rekodIkutTarikh: {}
+        };
+      }
+
       const data = group[bulan];
+      const tarikh = item.tarikh || "Tidak dikenal pasti";
+
       data.jumlah += 1;
       data.kelas[item.kelas] = (data.kelas[item.kelas] || 0) + 1;
+
+      if (!data.rekodIkutTarikh[tarikh]) data.rekodIkutTarikh[tarikh] = [];
+      data.rekodIkutTarikh[tarikh].push(item);
+
       if (item.jenisGuru === "Guru Sit-in") {
         data.sitIn += 1;
         data.guruSitIn[item.guru] = (data.guruSitIn[item.guru] || 0) + 1;
@@ -235,13 +377,39 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     });
 
     Object.values(group).forEach((bulan) => {
-      const kelasUntukAnalisis = kelasNames.length > 0 ? kelasNames : Object.keys(bulan.kelas);
+      const kelasUntukAnalisis =
+        kelasNames.length > 0 ? kelasNames : Object.keys(bulan.kelas);
+
       kelasUntukAnalisis.forEach((kelas) => {
-        bulan.kelasKosong[kelas] = Math.max(totalSlot - (bulan.kelas[kelas] || 0), 0);
+        bulan.kelasKosong[kelas] = 0;
       });
+
+      Object.entries(bulan.rekodIkutTarikh).forEach(([tarikh, rekodTarikh]) => {
+        // Jika tiada sebarang rekod pada hari tersebut, hari itu dianggap tidak aktif/cuti
+        // dan tidak dimasukkan dalam pengiraan bulanan.
+        if (rekodTarikh.length === 0) return;
+
+        kelasUntukAnalisis.forEach((kelas) => {
+          const adaRekodKelas = rekodTarikh.some((item) => item.kelas === kelas);
+          if (!adaRekodKelas) {
+            bulan.kelasKosong[kelas] = (bulan.kelasKosong[kelas] || 0) + 1;
+          }
+        });
+      });
+
+      bulan.jumlahHariAktif = Object.values(bulan.rekodIkutTarikh).filter(
+        (rekodTarikh) => rekodTarikh.length > 0
+      ).length;
+      bulan.jumlahKelasTiadaRekod =
+        kelasUntukAnalisis.filter((kelas) => (bulan.kelas[kelas] || 0) === 0).length;
+
       bulan.peratusGuruMasuk = bulan.jumlah > 0 ? ((bulan.guruMP / bulan.jumlah) * 100).toFixed(1) : 0;
       bulan.peratusGuruTidakMasuk = bulan.jumlah > 0 ? ((bulan.sitIn / bulan.jumlah) * 100).toFixed(1) : 0;
-      bulan.kelasPalingKosong = Object.entries(bulan.kelasKosong).sort((a, b) => b[1] - a[1])[0];
+
+      bulan.kelasPalingKosong = Object.entries(bulan.kelasKosong)
+        .filter(([, jumlah]) => jumlah > 0)
+        .sort((a, b) => b[1] - a[1])[0];
+
       bulan.kelasPalingSitIn = Object.entries(bulan.kelasSitIn).sort((a, b) => b[1] - a[1])[0];
       bulan.guruPalingSitIn = Object.entries(bulan.guruSitIn).sort((a, b) => b[1] - a[1])[0];
     });
@@ -265,7 +433,20 @@ data = data.filter((item) => item.tarikh === today.tarikh);
   }, [analisisKelas]);
 
   function updateField(field, value) {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => {
+      if (field !== "kelas") return { ...prev, [field]: value };
+
+      const masaDibenarkan = getMasaPaparanKelas(value, today.hari).filter(
+        (masa) => !masa.includes("REHAT")
+      );
+
+      return {
+        ...prev,
+        kelas: value,
+        masa: prev.masa.filter((masa) => masaDibenarkan.includes(masa))
+      };
+    });
+
     if (field === "kelas") setSelectedKelas(value);
   }
 
@@ -730,12 +911,31 @@ useEffect(() => {
                   <label className="text-sm font-bold text-slate-700">Masa</label>
                   <p className="text-xs text-slate-500">Boleh pilih lebih daripada satu masa.</p>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
-                    {masaList.map((masa) => {
+                    {masaListPaparan.map((masa) => {
                       const checked = form.masa.includes(masa);
+                      const isRehat = masa.includes("REHAT");
                       return (
-                        <label key={masa} className={`flex min-h-14 items-center gap-3 rounded-2xl border p-3 transition ${checked ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-800"}`}>
-                          <input type="checkbox" className="h-5 w-5" checked={checked} onChange={() => toggleMasa(masa)} />
-                          <span className="text-sm font-semibold">{masa}</span>
+                        <label
+                          key={masa}
+                          className={`flex min-h-14 items-center gap-3 rounded-2xl border p-3 transition ${
+                            isRehat
+                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70"
+                              : checked
+                                ? "border-slate-900 bg-slate-950 text-white"
+                                : "border-slate-200 bg-white text-slate-800"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-5 w-5"
+                            checked={checked}
+                            disabled={isRehat}
+                            onChange={() => !isRehat && toggleMasa(masa)}
+                          />
+                          <span className="text-sm font-semibold">
+                            {masa}
+                            {isRehat && " · Tidak dikira"}
+                          </span>
                         </label>
                       );
                     })}
@@ -873,7 +1073,68 @@ useEffect(() => {
 
             <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-sky-50 to-indigo-50 p-4 shadow-sm md:p-6">
               <div className="mb-5 flex items-center gap-2"><BarChart3 className="h-6 w-6" /><h2 className="text-xl font-black text-slate-950">Analisis Mengikut Kelas</h2></div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{analisisDipilih.map((item) => <div key={item.kelas} className="rounded-3xl border border-slate-200 p-4"><h3 className="text-lg font-black text-slate-950">{item.kelas}</h3><div className="mt-3 grid grid-cols-3 gap-2 text-center text-sm"><div className="rounded-2xl bg-slate-100 p-3"><p className="font-black text-xl">{item.jumlah}</p><p className="text-xs text-slate-500">Jumlah</p></div><div className="rounded-2xl bg-emerald-100 p-3"><p className="font-black text-xl">{item.guruMP}</p><p className="text-xs text-emerald-700">GMP</p></div><div className="rounded-2xl bg-amber-100 p-3"><p className="font-black text-xl">{item.sitIn}</p><p className="text-xs text-amber-700">Sit-in</p></div></div></div>)}</div>
+              {semuaKelasTiadaRekodHariIni ? (
+                <div className="rounded-3xl border border-sky-100 bg-sky-50 p-5 text-sky-900">
+                  <p className="text-lg font-black">Jumlah kelas tiada rekod: {kelasNames.length} kelas</p>
+                  <p className="mt-2 text-sm leading-6">
+                    Tiada sebarang rekod MMI untuk semua kelas pada hari ini. Hari ini dianggap sebagai hari tidak aktif dan tidak diambil kira dalam pengiraan peratus bulanan.
+                  </p>
+                </div>
+              ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {analisisDipilih.map((item) => (
+                  <div key={item.kelas} className="rounded-3xl border border-slate-200 bg-white/70 p-4">
+                    <h3 className="text-lg font-black text-slate-950">{item.kelas}</h3>
+
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-center text-sm">
+                      <div className="rounded-2xl bg-slate-100 p-3">
+                        <p className="font-black text-xl">{item.jumlah}</p>
+                        <p className="text-xs text-slate-500">Jumlah</p>
+                      </div>
+                      <div className="rounded-2xl bg-emerald-100 p-3">
+                        <p className="font-black text-xl">{item.guruMP}</p>
+                        <p className="text-xs text-emerald-700">GMP</p>
+                      </div>
+                      <div className="rounded-2xl bg-amber-100 p-3">
+                        <p className="font-black text-xl">{item.sitIn}</p>
+                        <p className="text-xs text-amber-700">Sit-in</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-center text-sm">
+                      <div className="rounded-2xl bg-green-100 p-3">
+                        <p className="font-black text-xl text-green-900">{item.peratusDaftar}%</p>
+                        <p className="text-xs text-green-700">Mendaftar</p>
+                        <p className="mt-1 text-[11px] text-green-700">
+                          {item.waktuDaftar}/{item.jumlahWaktu} waktu
+                        </p>
+                      </div>
+                      <div className="rounded-2xl bg-rose-100 p-3">
+                        <p className="font-black text-xl text-rose-900">{item.peratusTidakDaftar}%</p>
+                        <p className="text-xs text-rose-700">Tidak Mendaftar</p>
+                        <p className="mt-1 text-[11px] text-rose-700">
+                          {item.waktuTidakDaftar}/{item.jumlahWaktu} waktu
+                        </p>
+
+                        {item.senaraiWaktuTidakDaftar?.length > 0 && (
+                          <div className="mt-2 rounded-xl bg-white/60 p-2 text-left">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-rose-700">
+                              Belum Direkod
+                            </p>
+
+                            <p className="mt-1 text-[11px] leading-5 text-rose-800">
+                              {item.senaraiWaktuTidakDaftar.length <= 3
+                                ? item.senaraiWaktuTidakDaftar.join(", ")
+                                : `${item.senaraiWaktuTidakDaftar.slice(0, 3).join(", ")} dan ${item.senaraiWaktuTidakDaftar.length - 3} lagi`}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              )}
             </div>
           </div>
         )}
@@ -984,8 +1245,17 @@ useEffect(() => {
                         Peratus Guru Tidak Masuk: <strong>{bulan.peratusGuruTidakMasuk}%</strong>
                       </div>
                       <div className="rounded-2xl border p-4">
-                        Kelas Tiada Rekod MMI Tertinggi:<br />
-                        <strong>{bulan.kelasPalingKosong?.[0] || "Tiada data"}</strong>
+                        {bulan.kelasPalingKosong ? (
+                          <>
+                            Kelas Tiada Rekod MMI Tertinggi:<br />
+                            <strong>{bulan.kelasPalingKosong[0]}</strong>
+                          </>
+                        ) : (
+                          <>
+                            Jumlah kelas tiada rekod:<br />
+                            <strong>{bulan.jumlahKelasTiadaRekod || 0} kelas</strong>
+                          </>
+                        )}
                       </div>
                       <div className="rounded-2xl border p-4">
                         Kelas Paling Banyak Sit-in:<br />
