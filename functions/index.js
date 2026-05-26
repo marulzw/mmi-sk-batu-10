@@ -4,22 +4,58 @@ const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const OpenAI = require("openai");
 
 admin.initializeApp();
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-function janaRumusanAI({ jumlahRekod, jumlahGMP, jumlahSitIn }) {
-  const peratusGMP = jumlahRekod > 0 ? ((jumlahGMP / jumlahRekod) * 100).toFixed(1) : 0;
-  const peratusSitIn = jumlahRekod > 0 ? ((jumlahSitIn / jumlahRekod) * 100).toFixed(1) : 0;
+async function janaRumusanAI({
+  jumlahRekod,
+  jumlahGMP,
+  jumlahSitIn,
+}) {
+  try {
+    const prompt = `
+Tulis rumusan profesional laporan MMI sekolah dalam Bahasa Malaysia.
 
-  if (jumlahRekod === 0) {
-    return "Tiada rekod MMI direkodkan bagi bulan ini. Pemantauan dan pengisian rekod perlu diperkukuh bagi memastikan data MMI sekolah lengkap.";
+Data:
+- Jumlah rekod: ${jumlahRekod}
+- Guru Mata Pelajaran: ${jumlahGMP}
+- Guru Sit-in: ${jumlahSitIn}
+
+Arahan:
+- Tulis dalam nada profesional sekolah.
+- Panjang sekitar 1 perenggan.
+- Fokus kepada pemantauan Masa Instruksional.
+- Jika sit-in tinggi, berikan cadangan pemantauan.
+- Jika sit-in rendah, nyatakan pengurusan berjalan baik.
+`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Anda ialah pegawai pendidikan yang menulis laporan rasmi sekolah.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      temperature: 0.7,
+      max_tokens: 250,
+    });
+
+    return response.choices[0].message.content;
+  } catch (error) {
+    console.error("Ralat OpenAI:", error);
+
+    return "Rumusan AI tidak berjaya dijana.";
   }
-
-  if (jumlahSitIn === 0) {
-    return `Sepanjang bulan ini, sebanyak ${jumlahRekod} rekod MMI telah direkodkan. Semua rekod melibatkan Guru Mata Pelajaran tanpa keperluan Guru Sit-in. Ini menunjukkan keberadaan guru dalam kelas berada pada tahap sangat baik.`;
-  }
-
-  return `Sepanjang bulan ini, sebanyak ${jumlahRekod} rekod MMI telah direkodkan. Daripada jumlah tersebut, ${jumlahGMP} rekod atau ${peratusGMP}% melibatkan Guru Mata Pelajaran, manakala ${jumlahSitIn} rekod atau ${peratusSitIn}% melibatkan Guru Sit-in. Secara keseluruhannya, pelaksanaan MMI berjalan baik, namun kelas yang memerlukan Guru Sit-in perlu terus dipantau bagi mengurangkan gangguan terhadap masa instruksional murid.`;
 }
 
 exports.janaLaporanBulananAuto = onSchedule(
@@ -72,7 +108,7 @@ exports.janaLaporanBulananAuto = onSchedule(
     const jumlahSitIn = rekodBulanIni.filter(
       (item) => item.jenisGuru === "Guru Sit-in"
     ).length;
-    const rumusanAI = janaRumusanAI({
+    const rumusanAI = await janaRumusanAI({
   jumlahRekod,
   jumlahGMP,
   jumlahSitIn,
