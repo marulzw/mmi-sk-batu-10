@@ -6,6 +6,7 @@ import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from
 import { getFirestore, collection, addDoc, deleteDoc, doc, updateDoc, onSnapshot, orderBy, query, serverTimestamp } from "firebase/firestore";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from "recharts";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD2PX5F4DdcWTX30H3ECrJsq9znQ5rbfto",
@@ -901,124 +902,53 @@ function kiraStatistikLaporan(laporan) {
 }
 
 async function janaLaporanBulananManual() {
+
   if (!isAdminLoggedIn) return;
 
-  const bulanNama = new Date().toLocaleDateString("ms-MY", {
-    month: "long"
-  });
-
-  const tahun = new Date().getFullYear();
-
-  const laporanSudahWujud = senaraiLaporan.some(
-    (laporan) =>
-      String(laporan.bulan || "").toLowerCase() === bulanNama.toLowerCase() &&
-      String(laporan.tahun || "") === String(tahun)
-  );
-
-  if (laporanSudahWujud) {
-    setMessage(`Laporan Bulan ${bulanNama} ${tahun} sudah wujud.`);
-    return;
-  }
-
   try {
-    await addDoc(collection(db, LAPORAN_COLLECTION), {
-      tajuk: `Laporan Bulan ${bulanNama}`,
-      bulan: bulanNama,
-      tahun,
-      pdfUrl: "",
-      status: "PDF belum dijana",
-      createdAt: serverTimestamp()
-    });
 
-    setMessage("Laporan bulanan berjaya disediakan. Tekan Jana PDF untuk menghasilkan fail laporan.");
-  } catch {
-    setMessage("Gagal jana laporan bulanan.");
+    setMessage("Sedang menjana laporan AI...");
+
+    const functions = getFunctions(app, "us-central1");
+
+    const janaLaporan = httpsCallable(
+      functions,
+      "janaLaporanBulananManual"
+    );
+
+    await janaLaporan();
+
+    setMessage("Laporan berjaya dijana.");
+
+    await dapatkanLaporanBulanan();
+
+  } catch (error) {
+
+    console.error(error);
+
+    setMessage("Gagal menjana laporan.");
+
   }
 }
 
 async function janaPDFLaporanDemo(laporan, autoMode = false) {
   try {
-    const statistik = kiraStatistikLaporan(laporan);
-    const docPdf = new jsPDF();
 
-    docPdf.setFontSize(16);
-    docPdf.text("LAPORAN BULANAN MMI", 20, 20);
-
-    docPdf.setFontSize(11);
-    docPdf.text("SK Batu 10, Sibu", 20, 30);
-    docPdf.text(`Tajuk: ${laporan.tajuk || "Laporan Bulanan"}`, 20, 42);
-    docPdf.text(`Bulan: ${laporan.bulan || "-"}`, 20, 50);
-    docPdf.text(`Tahun: ${laporan.tahun || "-"}`, 20, 58);
-    docPdf.text("Status: Selesai", 20, 66);
-
-    docPdf.setFontSize(13);
-    docPdf.text("Ringkasan Statistik", 20, 82);
-
-    docPdf.setFontSize(11);
-    docPdf.text(`Jumlah Rekod: ${statistik.jumlahRekod}`, 20, 94);
-    docPdf.text(`Guru Mata Pelajaran: ${statistik.jumlahGMP}`, 20, 102);
-    docPdf.text(`Guru Sit-in: ${statistik.jumlahSitIn}`, 20, 110);
-    docPdf.text(`Kelas Rekod Tertinggi: ${statistik.kelasTertinggi[0]} (${statistik.kelasTertinggi[1]} rekod)`, 20, 118);
-    docPdf.text(`Guru Rekod Tertinggi: ${statistik.guruTertinggi[0]} (${statistik.guruTertinggi[1]} rekod)`, 20, 126);
-    docPdf.text(`Kelas Sit-in Tertinggi: ${statistik.sitInKelasTertinggi[0]} (${statistik.sitInKelasTertinggi[1]} rekod)`, 20, 134);
-
-    docPdf.setFontSize(13);
-    docPdf.text("Rumusan Sistem", 20, 152);
-
-    docPdf.setFontSize(11);
-    const rumusan =
-      statistik.jumlahRekod === 0
-        ? "Tiada rekod MMI yang dijumpai bagi bulan laporan ini."
-        : `Sepanjang bulan ${laporan.bulan} ${laporan.tahun}, sistem merekodkan ${statistik.jumlahRekod} rekod MMI. Daripada jumlah tersebut, ${statistik.jumlahGMP} rekod adalah Guru Mata Pelajaran dan ${statistik.jumlahSitIn} rekod adalah Guru Sit-in. Data ini boleh digunakan sebagai asas pemantauan Melindungi Masa Instruksional di peringkat sekolah.`;
-
-    docPdf.text(rumusan, 20, 162, { maxWidth: 170 });
-
-    let y = 188;
-    docPdf.setFontSize(13);
-    docPdf.text("Senarai Rekod Bulanan", 20, y);
-    y += 10;
-
-    docPdf.setFontSize(9);
-    statistik.rekodBulanIni.slice(0, 30).forEach((item, index) => {
-      if (y > 280) {
-        docPdf.addPage();
-        y = 20;
-      }
-
-      const line = `${index + 1}. ${item.tarikh || "-"} | ${item.kelas || "-"} | ${item.guru || "-"} | ${item.masa || "-"} | ${item.jenisGuru || "-"}`;
-      docPdf.text(line, 20, y, { maxWidth: 170 });
-      y += 7;
-    });
-
-    if (statistik.rekodBulanIni.length > 30) {
-      if (y > 280) {
-        docPdf.addPage();
-        y = 20;
-      }
-      docPdf.text(`Nota: Hanya 30 rekod pertama dipaparkan. Jumlah penuh rekod ialah ${statistik.rekodBulanIni.length}.`, 20, y, { maxWidth: 170 });
+    if (!laporan?.pdfUrl) {
+      alert("PDF laporan belum tersedia");
+      return;
     }
 
-    const pdfBlob = docPdf.output("blob");
+    window.location.href = laporan.pdfUrl;
 
-    const namaFail = `${laporan.tahun || "tahun"}_${laporan.bulan || "bulan"}_${laporan.firebaseId}.pdf`;
-    const storageRef = ref(storage, `laporan_bulanan/${namaFail}`);
+    setMessage(
+      autoMode
+        ? "Laporan automatik berjaya dibuka."
+        : "PDF laporan berjaya dibuka."
+    );
 
-    await uploadBytes(storageRef, pdfBlob);
-
-    const downloadURL = await getDownloadURL(storageRef);
-
-    await updateDoc(doc(db, LAPORAN_COLLECTION, laporan.firebaseId), {
-      pdfUrl: downloadURL,
-      status: "Selesai",
-      jumlahRekod: statistik.jumlahRekod,
-      jumlahGMP: statistik.jumlahGMP,
-      jumlahSitIn: statistik.jumlahSitIn,
-      updatedAt: serverTimestamp()
-    });
-
-    setMessage(autoMode ? "Laporan bulanan automatik berjaya dijana." : "PDF laporan berjaya dijana dan disimpan dalam Firebase Storage.");
   } catch {
-    setMessage("Gagal jana atau simpan PDF laporan.");
+    setMessage("Gagal membuka PDF laporan.");
   }
 }
 
@@ -1477,14 +1407,15 @@ useEffect(() => {
           </div>
 
           {laporan.pdfUrl ? (
-  <a
-    href={laporan.pdfUrl}
-    target="_blank"
-    rel="noreferrer"
-    className="rounded-2xl bg-sky-700 px-4 py-2 text-center text-sm font-bold text-white hover:bg-sky-800"
-  >
-    Buka PDF
-  </a>
+  <button
+  type="button"
+  onClick={() => {
+    window.open(laporan.pdfUrl, "_self");
+  }}
+  className="rounded-2xl bg-sky-700 px-4 py-2 text-center text-sm font-bold text-white hover:bg-sky-800"
+>
+  Muat Turun PDF
+</button>
 ) : (
   <div className="flex flex-col items-start">
     <span className="rounded-2xl bg-amber-100 px-4 py-2 text-center text-sm font-bold text-amber-700">
