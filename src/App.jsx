@@ -35,6 +35,21 @@ const KELAS_COLLECTION = "senarai_kelas";
 const LAPORAN_COLLECTION = "laporan_bulanan";
 const chartColors = ["#0f172a", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#8b5cf6"];
 
+const bulanPilihan = [
+  { value: "01", label: "Januari" },
+  { value: "02", label: "Februari" },
+  { value: "03", label: "Mac" },
+  { value: "04", label: "April" },
+  { value: "05", label: "Mei" },
+  { value: "06", label: "Jun" },
+  { value: "07", label: "Julai" },
+  { value: "08", label: "Ogos" },
+  { value: "09", label: "September" },
+  { value: "10", label: "Oktober" },
+  { value: "11", label: "November" },
+  { value: "12", label: "Disember" }
+];
+
 function getTodayInfo() {
   const now = new Date();
   const tarikh = now.toLocaleDateString("ms-MY", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -162,6 +177,9 @@ export default function BorangMMIApp() {
   
 // TAMBAH INI
 const [senaraiLaporan, setSenaraiLaporan] = useState([]);
+const [compileBulan, setCompileBulan] = useState(String(new Date().getMonth() + 1).padStart(2, "0"));
+const [compileTahun, setCompileTahun] = useState(String(new Date().getFullYear()));
+const [compileKelas, setCompileKelas] = useState("SEMUA");
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -519,6 +537,226 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     link.download = `Rekod_MMI_SK_Batu_10_${today.tarikh.replaceAll("/", "-")}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+
+  function getHariDalamBulan(bulan, tahun) {
+    const jumlahHari = new Date(Number(tahun), Number(bulan), 0).getDate();
+
+    return Array.from({ length: jumlahHari }, (_, index) => {
+      const hari = String(index + 1).padStart(2, "0");
+      return `${hari}/${bulan}/${tahun}`;
+    });
+  }
+
+  function getMinitMulaRekod(item) {
+    const masaPertama = String(item.masa || "").split(",")[0].trim();
+    const mula = masaPertama.split(" - ")[0].trim();
+    const [jam, minit] = mula.split(":").map(Number);
+    return (jam || 0) * 60 + (minit || 0);
+  }
+
+  function sortRekodPDF(a, b) {
+    return (
+      getMinitMulaRekod(a) - getMinitMulaRekod(b) ||
+      String(a.kelas || "").localeCompare(String(b.kelas || ""), "ms", { numeric: true }) ||
+      String(a.guru || "").localeCompare(String(b.guru || ""), "ms", { numeric: true })
+    );
+  }
+
+  function tambahHeaderCompilePDF(docPdf, { tarikh, hari, namaBulan, tahun, kelasLabel, sambungan = false }) {
+    const pageWidth = docPdf.internal.pageSize.getWidth();
+
+    docPdf.setFillColor(230, 242, 255);
+    docPdf.rect(10, 8, pageWidth - 20, 25, "F");
+
+    docPdf.setFont("helvetica", "bold");
+    docPdf.setFontSize(15);
+    docPdf.text(sambungan ? "REKOD HARIAN MMI (SAMBUNGAN)" : "REKOD HARIAN MMI", pageWidth / 2, 18, { align: "center" });
+
+    docPdf.setFontSize(10);
+    docPdf.text("SK BATU 10, SIBU", pageWidth / 2, 26, { align: "center" });
+
+    docPdf.setFont("helvetica", "normal");
+    docPdf.setFontSize(9);
+    docPdf.text(`Bulan: ${namaBulan} ${tahun}`, 14, 42);
+    docPdf.text(`Tarikh: ${tarikh}`, 14, 49);
+    docPdf.text(`Hari: ${hari}`, 14, 56);
+    docPdf.text(`Kelas: ${kelasLabel}`, pageWidth - 14, 42, { align: "right" });
+  }
+
+  function tambahHeaderJadualCompilePDF(docPdf, y) {
+    const columnX = [14, 26, 72, 103, 188, 238];
+    const headers = ["Bil", "Masa", "Kelas", "Guru", "Jenis Guru", "Masa Hantar"];
+
+    docPdf.setFillColor(15, 23, 42);
+    docPdf.rect(14, y - 6, 268, 9, "F");
+
+    docPdf.setTextColor(255, 255, 255);
+    docPdf.setFont("helvetica", "bold");
+    docPdf.setFontSize(8);
+
+    headers.forEach((header, index) => {
+      docPdf.text(header, columnX[index], y);
+    });
+
+    docPdf.setTextColor(0, 0, 0);
+    docPdf.setFont("helvetica", "normal");
+
+    return y + 8;
+  }
+
+
+
+  function compileRekodBulananPDF() {
+    if (!isAdminLoggedIn) return;
+
+    if (!compileBulan || !compileTahun) {
+      setMessage("Sila pilih bulan dan tahun terlebih dahulu.");
+      return;
+    }
+
+    const namaBulan =
+      bulanPilihan.find((item) => item.value === compileBulan)?.label || compileBulan;
+
+    const semuaTarikhAktif = getHariDalamBulan(compileBulan, compileTahun).filter((tarikh) => {
+      const hari = getHariFromTarikh(tarikh);
+      return !["Sabtu", "Ahad"].includes(hari);
+    });
+
+    const kelasUntukCompile =
+      compileKelas === "SEMUA"
+        ? kelasList.map((kelas) => kelas.nama).filter(Boolean)
+        : [compileKelas];
+
+    if (kelasUntukCompile.length === 0) {
+      setMessage("Tiada kelas dijumpai untuk dijana.");
+      return;
+    }
+
+    const rekodBulanIni = rekod.filter((item) => {
+      const parts = String(item.tarikh || "").split("/");
+      if (parts.length !== 3) return false;
+
+      return parts[1] === compileBulan && parts[2] === String(compileTahun);
+    });
+
+    const docPdf = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4",
+    });
+
+    let halamanPertama = true;
+    let jumlahHalaman = 0;
+
+    kelasUntukCompile.forEach((kelasNama) => {
+      semuaTarikhAktif.forEach((tarikh) => {
+        if (!halamanPertama) {
+          docPdf.addPage("a4", "landscape");
+        }
+
+        halamanPertama = false;
+        jumlahHalaman += 1;
+
+        const hari = getHariFromTarikh(tarikh);
+        const rekodTarikhSemuaKelas = rekodBulanIni.filter((item) => item.tarikh === tarikh);
+        const hariTidakAktif = rekodTarikhSemuaKelas.length === 0;
+
+        const rekodHarian =
+          hariTidakAktif
+            ? []
+            : rekodTarikhSemuaKelas
+                .filter((item) => item.kelas === kelasNama)
+                .sort(sortRekodPDF);
+
+        tambahHeaderCompilePDF(docPdf, {
+          tarikh,
+          hari,
+          namaBulan,
+          tahun: compileTahun,
+          kelasLabel: kelasNama,
+        });
+
+        let y = tambahHeaderJadualCompilePDF(docPdf, 72);
+
+        if (hariTidakAktif) {
+          docPdf.setFont("helvetica", "italic");
+          docPdf.setFontSize(10);
+          docPdf.text("Hari tidak aktif atau cuti. Tiada rekod MMI daripada semua kelas pada tarikh ini.", 14, y + 8, { maxWidth: 250 });
+        } else if (rekodHarian.length === 0) {
+          docPdf.setFont("helvetica", "italic");
+          docPdf.setFontSize(10);
+          docPdf.text("Tiada rekod MMI untuk kelas ini pada tarikh ini.", 14, y + 8);
+        } else {
+          const columnX = [14, 26, 72, 103, 188, 238];
+          const columnW = [10, 42, 28, 80, 46, 35];
+
+          rekodHarian.forEach((item, index) => {
+            if (y > 190) {
+              docPdf.addPage("a4", "landscape");
+              jumlahHalaman += 1;
+
+              tambahHeaderCompilePDF(docPdf, {
+                tarikh,
+                hari,
+                namaBulan,
+                tahun: compileTahun,
+                kelasLabel: kelasNama,
+                sambungan: true,
+              });
+
+              y = tambahHeaderJadualCompilePDF(docPdf, 72);
+            }
+
+            if (index % 2 === 0) {
+              docPdf.setFillColor(248, 250, 252);
+            } else {
+              docPdf.setFillColor(239, 246, 255);
+            }
+
+            docPdf.rect(14, y - 6, 268, 10, "F");
+
+            const row = [
+              String(index + 1),
+              String(item.masa || "-"),
+              String(item.kelas || "-"),
+              String(item.guru || "-"),
+              String(item.jenisGuru || "-"),
+              String(item.masaHantar || "-"),
+            ];
+
+            docPdf.setFont("helvetica", "normal");
+            docPdf.setFontSize(7.5);
+
+            row.forEach((value, colIndex) => {
+              const lines = docPdf.splitTextToSize(value, columnW[colIndex]);
+              docPdf.text(lines.slice(0, 2), columnX[colIndex], y);
+            });
+
+            y += 10;
+          });
+        }
+
+        const pageWidth = docPdf.internal.pageSize.getWidth();
+        const pageHeight = docPdf.internal.pageSize.getHeight();
+        docPdf.setFont("helvetica", "normal");
+        docPdf.setFontSize(8);
+        docPdf.setTextColor(100, 116, 139);
+        docPdf.text(`Dijana oleh Sistem MMI SK Batu 10 | ${kelasNama}`, pageWidth / 2, pageHeight - 8, { align: "center" });
+        docPdf.setTextColor(0, 0, 0);
+      });
+    });
+
+    if (jumlahHalaman === 0) {
+      setMessage("Tiada hari persekolahan Isnin hingga Jumaat untuk bulan yang dipilih.");
+      return;
+    }
+
+    const labelFail = compileKelas === "SEMUA" ? "Semua_Kelas" : compileKelas.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
+    docPdf.save(`Rekod_MMI_${namaBulan}_${compileTahun}_${labelFail}.pdf`);
+
+    setMessage(`PDF rekod bulanan ${namaBulan} ${compileTahun} berjaya dijana mengikut susunan kelas.`);
   }
 
   async function clearData() {
@@ -934,7 +1172,7 @@ useEffect(() => {
                           />
                           <span className="text-sm font-semibold">
                             {masa}
-                            {isRehat && " · Tidak dikira"}
+                            
                           </span>
                         </label>
                       );
@@ -1143,6 +1381,68 @@ useEffect(() => {
           <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-sky-50 to-indigo-50 p-4 shadow-sm md:p-6">
             <h2 className="mb-2 text-xl font-black text-slate-950">Laporan Bulanan Keseluruhan</h2>
             <p className="mb-5 text-sm text-slate-600">Paparan ini menjadi asas laporan bulanan automatik.</p>
+
+            {isAdminLoggedIn && (
+              <div className="mb-6 rounded-[2rem] border border-sky-100 bg-white/80 p-4">
+                <h3 className="mb-2 text-lg font-black text-slate-950">Compile Rekod Bulanan</h3>
+                <p className="mb-4 text-sm text-slate-600">
+                  Admin boleh menjana rekod harian selama sebulan dalam bentuk PDF landscape. Satu tarikh akan disusun pada satu muka surat.
+                </p>
+
+                <div className="grid gap-3 md:grid-cols-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-600">Bulan</label>
+                    <select
+                      value={compileBulan}
+                      onChange={(e) => setCompileBulan(e.target.value)}
+                      className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:ring-4 focus:ring-slate-100"
+                    >
+                      {bulanPilihan.map((bulan) => (
+                        <option key={bulan.value} value={bulan.value}>
+                          {bulan.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-600">Tahun</label>
+                    <input
+                      type="number"
+                      value={compileTahun}
+                      onChange={(e) => setCompileTahun(e.target.value)}
+                      className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:ring-4 focus:ring-slate-100"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-600">Kelas</label>
+                    <select
+                      value={compileKelas}
+                      onChange={(e) => setCompileKelas(e.target.value)}
+                      className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:ring-4 focus:ring-slate-100"
+                    >
+                      <option value="SEMUA">Semua Kelas</option>
+                      {kelasList.map((kelas) => (
+                        <option key={kelas.firebaseId} value={kelas.nama}>
+                          {kelas.nama}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={compileRekodBulananPDF}
+                      className="h-12 w-full rounded-2xl bg-slate-950 px-4 text-sm font-black text-white hover:bg-slate-800"
+                    >
+                      Jana PDF Rekod
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             {isAdminLoggedIn && (
   <button
     onClick={janaLaporanBulananManual}
