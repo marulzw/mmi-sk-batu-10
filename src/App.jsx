@@ -1310,7 +1310,7 @@ useEffect(() => {
         {activeTab === "laporan" && (
           <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-sky-50 to-indigo-50 p-4 shadow-sm md:p-6">
             <h2 className="mb-2 text-xl font-black text-slate-950">Laporan Bulanan Keseluruhan</h2>
-            <p className="mb-5 text-sm text-slate-600">Paparan ini menjadi asas laporan bulanan automatik.</p>
+            
 
             {isAdminLoggedIn && (
               <div className="mb-6 rounded-[2rem] border border-sky-100 bg-white/80 p-4">
@@ -1382,9 +1382,7 @@ useEffect(() => {
   </button>
 )}
             <div className="mb-6 rounded-[2rem] border border-slate-200 bg-slate-50 p-4">
-  <h3 className="mb-3 text-lg font-black text-slate-950">
-    Senarai Laporan PDF Bulanan
-  </h3>
+  
 
   {senaraiLaporan.length === 0 ? (
     <div className="rounded-2xl bg-white p-4 text-sm text-slate-600">
@@ -1457,7 +1455,7 @@ useEffect(() => {
               </div>
             )}
 
-            {laporanBulanan.length === 0 ? (
+            {laporanBulanan.length === 0 && senaraiLaporan.length === 0 ? (
               <div className="rounded-2xl bg-slate-100 p-4 text-slate-600">Belum ada data laporan bulanan.</div>
             ) : (
               <div className="space-y-4">
