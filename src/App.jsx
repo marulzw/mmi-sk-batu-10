@@ -158,7 +158,13 @@ function kiraKehadiranWaktuKelas(kelas, hari, tarikh, rekod) {
 }
 
 export default function BorangMMIApp() {
-  const [form, setForm] = useState({ kelas: "", guru: "", masa: [], jenisGuru: "Guru Mata Pelajaran" });
+  const [form, setForm] = useState({
+    kelas: "",
+    guru: "",
+    masa: [],
+    jenisGuru: "Guru Mata Pelajaran",
+    guruYangDiganti: ""
+  });
   const [rekod, setRekod] = useState([]);
   const [search, setSearch] = useState("");
   const [selectedKelas, setSelectedKelas] = useState("");
@@ -260,6 +266,11 @@ const [compileKelas, setCompileKelas] = useState("SEMUA");
     [form.kelas, today.hari]
   );
 
+  const guruYangDigantiList = useMemo(
+    () => guruList.filter((guru) => guru.nama !== form.guru),
+    [guruList, form.guru]
+  );
+
   const rekodHariIni = useMemo(
     () => rekod.filter((item) => item.tarikh === today.tarikh),
     [rekod, today.tarikh]
@@ -283,7 +294,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
   if (keyword) {
     data = data.filter((item) =>
-      [item.tarikh, item.hari, item.kelas, item.guru, item.masa, item.jenisGuru]
+      [item.tarikh, item.hari, item.kelas, item.guru, item.guruYangDiganti, item.masa, item.jenisGuru]
         .join(" ")
         .toLowerCase()
         .includes(keyword)
@@ -453,6 +464,22 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
   function updateField(field, value) {
     setForm((prev) => {
+      if (field === "guru") {
+        return {
+          ...prev,
+          guru: value,
+          guruYangDiganti: prev.guruYangDiganti === value ? "" : prev.guruYangDiganti
+        };
+      }
+
+      if (field === "jenisGuru") {
+        return {
+          ...prev,
+          jenisGuru: value,
+          guruYangDiganti: value === "Guru Sit-in" ? prev.guruYangDiganti : ""
+        };
+      }
+
       if (field !== "kelas") return { ...prev, [field]: value };
 
       const masaDibenarkan = getMasaPaparanKelas(value, today.hari).filter(
@@ -485,6 +512,11 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     return;
   }
 
+  if (form.jenisGuru === "Guru Sit-in" && !form.guruYangDiganti) {
+    setMessage("Sila pilih guru yang diganti.");
+    return;
+  }
+
   // Simpan kelas dipilih supaya kekal selepas submit
   const selectedClass = form.kelas;
 
@@ -503,6 +535,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       masaArray: form.masa,
 
       jenisGuru: form.jenisGuru,
+      guruYangDiganti: form.jenisGuru === "Guru Sit-in" ? form.guruYangDiganti : "",
 
       createdAt: serverTimestamp()
     });
@@ -515,7 +548,8 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       kelas: selectedClass,
       guru: "",
       masa: [],
-      jenisGuru: "Guru Mata Pelajaran"
+      jenisGuru: "Guru Mata Pelajaran",
+      guruYangDiganti: ""
     });
 
     setMessage(
@@ -528,8 +562,8 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 }
 
   function exportCSV() {
-    const headers = ["Bil", "Tarikh", "Hari", "Masa Hantar", "Nama Kelas", "Nama Guru", "Masa", "Jenis Guru"];
-    const rows = filteredRekod.map((item, index) => [index + 1, item.tarikh, item.hari, item.masaHantar, item.kelas, item.guru, item.masa, item.jenisGuru]);
+    const headers = ["Bil", "Tarikh", "Hari", "Masa Hantar", "Nama Kelas", "Nama Guru", "Guru Yang Diganti", "Masa", "Jenis Guru"];
+    const rows = filteredRekod.map((item, index) => [index + 1, item.tarikh, item.hari, item.masaHantar, item.kelas, item.guru, item.guruYangDiganti || "-", item.masa, item.jenisGuru]);
     const csv = [headers, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -569,33 +603,33 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     const pageWidth = docPdf.internal.pageSize.getWidth();
 
     docPdf.setFillColor(230, 242, 255);
-    docPdf.rect(10, 8, pageWidth - 20, 25, "F");
+    docPdf.rect(10, 8, pageWidth - 20, 20, "F");
 
     docPdf.setFont("helvetica", "bold");
-    docPdf.setFontSize(15);
-    docPdf.text(sambungan ? "REKOD HARIAN MMI (SAMBUNGAN)" : "REKOD HARIAN MMI", pageWidth / 2, 18, { align: "center" });
+    docPdf.setFontSize(13);
+    docPdf.text(sambungan ? "REKOD HARIAN MMI (SAMBUNGAN)" : "REKOD HARIAN MMI", pageWidth / 2, 17, { align: "center" });
 
-    docPdf.setFontSize(10);
-    docPdf.text("SK BATU 10, SIBU", pageWidth / 2, 26, { align: "center" });
+    docPdf.setFontSize(9);
+    docPdf.text("SK BATU 10, SIBU", pageWidth / 2, 25, { align: "center" });
 
     docPdf.setFont("helvetica", "normal");
-    docPdf.setFontSize(9);
-    docPdf.text(`Bulan: ${namaBulan} ${tahun}`, 14, 42);
-    docPdf.text(`Tarikh: ${tarikh}`, 14, 49);
-    docPdf.text(`Hari: ${hari}`, 14, 56);
-    docPdf.text(`Kelas: ${kelasLabel}`, pageWidth - 14, 42, { align: "right" });
+    docPdf.setFontSize(8);
+    docPdf.text(`Bulan: ${namaBulan} ${tahun}`, 14, 36);
+    docPdf.text(`Tarikh: ${tarikh}`, 14, 42);
+    docPdf.text(`Hari: ${hari}`, 14, 48);
+    docPdf.text(`Kelas: ${kelasLabel}`, pageWidth - 14, 36, { align: "right" });
   }
 
   function tambahHeaderJadualCompilePDF(docPdf, y) {
-    const columnX = [14, 26, 72, 103, 188, 238];
-    const headers = ["Bil", "Masa", "Kelas", "Guru", "Jenis Guru", "Masa Hantar"];
+    const columnX = [14, 25, 70, 101, 154, 202, 241];
+    const headers = ["Bil", "Masa", "Kelas", "Guru", "Guru Diganti", "Jenis Guru", "Masa Hantar"];
 
     docPdf.setFillColor(15, 23, 42);
     docPdf.rect(14, y - 6, 268, 9, "F");
 
     docPdf.setTextColor(255, 255, 255);
     docPdf.setFont("helvetica", "bold");
-    docPdf.setFontSize(8);
+    docPdf.setFontSize(8.5);
 
     headers.forEach((header, index) => {
       docPdf.text(header, columnX[index], y);
@@ -671,6 +705,46 @@ data = data.filter((item) => item.tarikh === today.tarikh);
                 .filter((item) => item.kelas === kelasNama)
                 .sort(sortRekodPDF);
 
+        const rekodSlotHarian = hariTidakAktif
+          ? []
+          : getMasaPaparanKelas(kelasNama, hari).map((masa) => {
+              const isRehatRow = masa.includes("REHAT");
+              const rekodSlot = rekodHarian.find((item) =>
+                Array.isArray(item.masaArray)
+                  ? item.masaArray.includes(masa)
+                  : String(item.masa || "").includes(masa)
+              );
+
+              if (isRehatRow) {
+                return {
+                  isRehatRow: true,
+                  masa: masa.replace(" (REHAT)", ""),
+                  kelas: kelasNama,
+                  guru: "Waktu Rehat",
+                  guruYangDiganti: "-",
+                  jenisGuru: "REHAT",
+                  masaHantar: "-"
+                };
+              }
+
+              if (rekodSlot) {
+                return {
+                  ...rekodSlot,
+                  masa
+                };
+              }
+
+              return {
+                isKosongRow: true,
+                masa,
+                kelas: kelasNama,
+                guru: "-",
+                guruYangDiganti: "-",
+                jenisGuru: "-",
+                masaHantar: "-"
+              };
+            });
+
         tambahHeaderCompilePDF(docPdf, {
           tarikh,
           hari,
@@ -679,21 +753,21 @@ data = data.filter((item) => item.tarikh === today.tarikh);
           kelasLabel: kelasNama,
         });
 
-        let y = tambahHeaderJadualCompilePDF(docPdf, 72);
+        let y = tambahHeaderJadualCompilePDF(docPdf, 60);
 
         if (hariTidakAktif) {
           docPdf.setFont("helvetica", "italic");
           docPdf.setFontSize(10);
           docPdf.text("Hari tidak aktif atau cuti. Tiada rekod MMI daripada semua kelas pada tarikh ini.", 14, y + 8, { maxWidth: 250 });
-        } else if (rekodHarian.length === 0) {
+        } else if (rekodSlotHarian.length === 0) {
           docPdf.setFont("helvetica", "italic");
           docPdf.setFontSize(10);
           docPdf.text("Tiada rekod MMI untuk kelas ini pada tarikh ini.", 14, y + 8);
         } else {
-          const columnX = [14, 26, 72, 103, 188, 238];
-          const columnW = [10, 42, 28, 80, 46, 35];
+          const columnX = [14, 25, 70, 101, 154, 202, 241];
+          const columnW = [9, 42, 28, 50, 42, 35, 35];
 
-          rekodHarian.forEach((item, index) => {
+          rekodSlotHarian.forEach((item, index) => {
             if (y > 190) {
               docPdf.addPage("a4", "landscape");
               jumlahHalaman += 1;
@@ -707,35 +781,38 @@ data = data.filter((item) => item.tarikh === today.tarikh);
                 sambungan: true,
               });
 
-              y = tambahHeaderJadualCompilePDF(docPdf, 72);
+              y = tambahHeaderJadualCompilePDF(docPdf, 60);
             }
 
-            if (index % 2 === 0) {
+            if (item.isRehatRow) {
+              docPdf.setFillColor(254, 243, 199);
+            } else if (index % 2 === 0) {
               docPdf.setFillColor(248, 250, 252);
             } else {
               docPdf.setFillColor(239, 246, 255);
             }
 
-            docPdf.rect(14, y - 6, 268, 10, "F");
+            docPdf.rect(14, y - 5.5, 268, 9.5, "F");
 
             const row = [
               String(index + 1),
               String(item.masa || "-"),
               String(item.kelas || "-"),
               String(item.guru || "-"),
+              String(item.guruYangDiganti || "-"),
               String(item.jenisGuru || "-"),
               String(item.masaHantar || "-"),
             ];
 
-            docPdf.setFont("helvetica", "normal");
-            docPdf.setFontSize(7.5);
+            docPdf.setFont("helvetica", item.isRehatRow ? "bold" : "normal");
+            docPdf.setFontSize(8.2);
 
             row.forEach((value, colIndex) => {
               const lines = docPdf.splitTextToSize(value, columnW[colIndex]);
               docPdf.text(lines.slice(0, 2), columnX[colIndex], y);
             });
 
-            y += 10;
+            y += 9.5;
           });
         }
 
@@ -1039,12 +1116,19 @@ useEffect(() => {
           </div>
         </div>
 
-        <div className="sticky top-0 z-20 -mx-3 overflow-x-auto bg-slate-100/95 px-3 py-2 backdrop-blur sm:mx-0 sm:rounded-3xl sm:border sm:bg-white/90">
-          <div className="flex min-w-max gap-2">
-            <button onClick={() => setActiveTab("rekod")} className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${activeTab === "rekod" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>Rekod</button>
-            <button onClick={() => setActiveTab("analisis")} className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${activeTab === "analisis" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>Analisis</button>
-            <button onClick={() => setActiveTab("laporan")} className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${activeTab === "laporan" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>Laporan Bulanan</button>
-            <button onClick={() => setActiveTab("admin")} className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${activeTab === "admin" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>{isAdminLoggedIn ? "Admin" : "Login Admin"}</button>
+        <div className="sticky top-0 z-20 -mx-3 bg-slate-100/95 px-2 py-2 backdrop-blur sm:mx-0 sm:rounded-3xl sm:border sm:bg-white/90 sm:px-3">
+          <div className="grid w-full grid-cols-4 gap-1.5 sm:flex sm:gap-2">
+            <button onClick={() => setActiveTab("rekod")} className={`min-h-12 rounded-2xl px-2 py-2 text-center text-xs font-bold leading-tight transition sm:px-4 sm:py-3 sm:text-sm ${activeTab === "rekod" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>Rekod</button>
+            <button onClick={() => setActiveTab("analisis")} className={`min-h-12 rounded-2xl px-2 py-2 text-center text-xs font-bold leading-tight transition sm:px-4 sm:py-3 sm:text-sm ${activeTab === "analisis" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>Analisis</button>
+            <button onClick={() => setActiveTab("laporan")} className={`min-h-12 rounded-2xl px-2 py-2 text-center text-xs font-bold leading-tight transition sm:px-4 sm:py-3 sm:text-sm ${activeTab === "laporan" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>Laporan Bulanan</button>
+            <button onClick={() => setActiveTab("admin")} className={`min-h-12 rounded-2xl px-2 py-2 text-center text-xs font-bold leading-tight transition sm:px-4 sm:py-3 sm:text-sm ${activeTab === "admin" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>
+              {isAdminLoggedIn ? "Admin" : (
+                <>
+                  <span className="sm:hidden">Login</span>
+                  <span className="hidden sm:inline">Login Admin</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
@@ -1124,6 +1208,27 @@ useEffect(() => {
                   </div>
                 </div>
 
+                {form.jenisGuru === "Guru Sit-in" && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">Guru yang diganti</label>
+                    <select
+                      className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+                      value={form.guruYangDiganti}
+                      onChange={(e) => updateField("guruYangDiganti", e.target.value)}
+                    >
+                      <option value="">Pilih guru yang diganti</option>
+                      {guruYangDigantiList.map((guru) => (
+                        <option key={guru.firebaseId} value={guru.nama}>
+                          {guru.nama}
+                        </option>
+                      ))}
+                    </select>
+                    {!form.guru && (
+                      <p className="text-xs text-slate-500">Pilih nama guru dahulu supaya nama sendiri tidak muncul dalam senarai ini.</p>
+                    )}
+                  </div>
+                )}
+
                 <button type="submit" className="h-14 w-full rounded-2xl bg-sky-700 px-4 text-base font-black text-white shadow-sm transition hover:bg-sky-800 active:scale-[0.99]">Hantar Rekod</button>
                 {message && <div className="rounded-2xl bg-slate-100 p-3 text-sm font-medium text-slate-700">{message}</div>}
               </form>
@@ -1154,15 +1259,22 @@ useEffect(() => {
                   {filteredRekod.length === 0 ? <div className="rounded-2xl bg-slate-100 p-5 text-center text-sm text-slate-500">Belum ada rekod.</div> : filteredRekod.map((item, index) => (
                     <div key={item.firebaseId} className={`rounded-3xl border border-slate-200 p-4 shadow-sm ${index % 2 === 0 ? "bg-white" : "bg-[#EEF4FF]"}`}>
                       <div className="mb-3 flex items-start justify-between gap-3"><div><p className="text-xs font-semibold text-slate-500">#{index + 1} · {item.tarikh}</p><h3 className="text-lg font-black text-slate-950">{item.kelas}</h3></div><span className={`rounded-full px-3 py-1 text-xs font-bold ${item.jenisGuru === "Guru Sit-in" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{item.jenisGuru}</span></div>
-                      <div className="grid gap-2 text-sm text-slate-700"><div><strong>Guru:</strong> {item.guru}</div><div><strong>Masa:</strong> {item.masa}</div><div><strong>Hantar:</strong> {item.hari}, {item.masaHantar}</div></div>
+                      <div className="grid gap-2 text-sm text-slate-700">
+                        <div><strong>Guru:</strong> {item.guru}</div>
+                        {item.jenisGuru === "Guru Sit-in" && item.guruYangDiganti && (
+                          <div><strong>Guru diganti:</strong> {item.guruYangDiganti}</div>
+                        )}
+                        <div><strong>Masa:</strong> {item.masa}</div>
+                        <div><strong>Hantar:</strong> {item.hari}, {item.masaHantar}</div>
+                      </div>
                     </div>
                   ))}
                 </div>
 
                 <div className="hidden overflow-x-auto rounded-2xl border md:block">
                   <table className="w-full min-w-[850px] text-sm">
-                    <thead className="bg-gradient-to-r from-sky-100 to-indigo-100 text-slate-800"><tr><th className="p-3 text-left">Bil</th><th className="p-3 text-left">Tarikh</th><th className="p-3 text-left">Hari</th><th className="p-3 text-left">Masa Hantar</th><th className="p-3 text-left">Kelas</th><th className="p-3 text-left">Guru</th><th className="p-3 text-left">Masa</th><th className="p-3 text-left">Jenis</th></tr></thead>
-                    <tbody>{filteredRekod.length === 0 ? <tr><td colSpan="8" className="p-6 text-center text-slate-500">Belum ada rekod.</td></tr> : filteredRekod.map((item, index) => <tr key={item.firebaseId} className={`border-t transition hover:bg-sky-100 ${index % 2 === 0 ? "bg-white" : "bg-[#EEF4FF]"}`}><td className="p-3">{index + 1}</td><td className="p-3">{item.tarikh}</td><td className="p-3">{item.hari}</td><td className="p-3">{item.masaHantar}</td><td className="p-3 font-bold">{item.kelas}</td><td className="p-3">{item.guru}</td><td className="p-3">{item.masa}</td><td className="p-3">{item.jenisGuru}</td></tr>)}</tbody>
+                    <thead className="bg-gradient-to-r from-sky-100 to-indigo-100 text-slate-800"><tr><th className="p-3 text-left">Bil</th><th className="p-3 text-left">Tarikh</th><th className="p-3 text-left">Hari</th><th className="p-3 text-left">Masa Hantar</th><th className="p-3 text-left">Kelas</th><th className="p-3 text-left">Guru</th><th className="p-3 text-left">Guru Diganti</th><th className="p-3 text-left">Masa</th><th className="p-3 text-left">Jenis</th></tr></thead>
+                    <tbody>{filteredRekod.length === 0 ? <tr><td colSpan="9" className="p-6 text-center text-slate-500">Belum ada rekod.</td></tr> : filteredRekod.map((item, index) => <tr key={item.firebaseId} className={`border-t transition hover:bg-sky-100 ${index % 2 === 0 ? "bg-white" : "bg-[#EEF4FF]"}`}><td className="p-3">{index + 1}</td><td className="p-3">{item.tarikh}</td><td className="p-3">{item.hari}</td><td className="p-3">{item.masaHantar}</td><td className="p-3 font-bold">{item.kelas}</td><td className="p-3">{item.guru}</td><td className="p-3">{item.guruYangDiganti || "-"}</td><td className="p-3">{item.masa}</td><td className="p-3">{item.jenisGuru}</td></tr>)}</tbody>
                   </table>
                 </div>
               </div>

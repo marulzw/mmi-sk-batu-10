@@ -490,9 +490,11 @@ function janaPDFLaporan({
 
   resetKedudukan(docPdf);
 
-  tajukSeksyen(docPdf, "3. Visualisasi Data");
+  pastikanRuang(docPdf, 260);
 
-  lukisPieRingkas(
+tajukSeksyen(docPdf, "3. Visualisasi Data");
+
+lukisPieRingkas(
     docPdf,
     "Nisbah Rekod Guru Mata Pelajaran dan Guru Sit-in",
     jumlahGMP,
