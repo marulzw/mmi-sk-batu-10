@@ -1223,9 +1223,6 @@ useEffect(() => {
                         </option>
                       ))}
                     </select>
-                    {!form.guru && (
-                      <p className="text-xs text-slate-500">Pilih nama guru dahulu supaya nama sendiri tidak muncul dalam senarai ini.</p>
-                    )}
                   </div>
                 )}
 
