@@ -313,15 +313,19 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 }, [rekod, search, selectedKelas, today.tarikh]);
 
   const jumlahHariIni = rekodHariIni.length;
-  const jumlahSitIn = rekod.filter((item) => item.jenisGuru === "Guru Sit-in").length;
+  const jumlahKelasDirekodHariIni = useMemo(
+    () => new Set(rekodHariIni.map((item) => item.kelas).filter(Boolean)).size,
+    [rekodHariIni]
+  );
+  const jumlahSitIn = rekodHariIni.filter((item) => item.jenisGuru === "Guru Sit-in").length;
 
   const analisisKelas = useMemo(() => kelasNames.map((kelas) => {
-    const dataKelas = rekod.filter((item) => item.kelas === kelas);
+    const dataKelas = rekodHariIni.filter((item) => item.kelas === kelas);
     const statistikWaktu = kiraKehadiranWaktuKelas(
       kelas,
       today.hari,
       today.tarikh,
-      rekod
+      rekodHariIni
     );
 
     return {
@@ -331,7 +335,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       sitIn: dataKelas.filter((item) => item.jenisGuru === "Guru Sit-in").length,
       ...statistikWaktu
     };
-  }), [rekod, kelasNames, today.hari, today.tarikh]);
+  }), [rekodHariIni, kelasNames, today.hari, today.tarikh]);
 
   const analisisDipilih = selectedKelas ? analisisKelas.filter((item) => item.kelas === selectedKelas) : analisisKelas;
 
@@ -342,16 +346,16 @@ data = data.filter((item) => item.tarikh === today.tarikh);
   }, [analisisDipilih]);
 
   const pieJenisGuruData = useMemo(() => [
-    { name: "Guru Mata Pelajaran", value: rekod.filter((item) => item.jenisGuru === "Guru Mata Pelajaran").length },
-    { name: "Guru Sit-in", value: rekod.filter((item) => item.jenisGuru === "Guru Sit-in").length }
-  ], [rekod]);
+    { name: "Guru Mata Pelajaran", value: rekodHariIni.filter((item) => item.jenisGuru === "Guru Mata Pelajaran").length },
+    { name: "Guru Sit-in", value: rekodHariIni.filter((item) => item.jenisGuru === "Guru Sit-in").length }
+  ], [rekodHariIni]);
 
   const chartMasaData = useMemo(() => {
     return masaList.map((masa) => ({
       masa: masa.replace(" (REHAT)", ""),
-      Rekod: rekod.filter((item) => String(item.masa || "").includes(masa)).length
+      Rekod: rekodHariIni.filter((item) => String(item.masa || "").includes(masa)).length
     })).filter((item) => item.Rekod > 0);
-  }, [rekod]);
+  }, [rekodHariIni]);
 
   function getMonthYear(tarikh) {
     const parts = String(tarikh || "").split("/");
@@ -1233,9 +1237,9 @@ useEffect(() => {
 
             <div className="space-y-4 md:space-y-6">
               <div className="grid grid-cols-3 gap-2 sm:gap-4">
-                <div className="rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-100 to-white p-4 shadow-sm"><p className="text-xs font-semibold text-sky-700 sm:text-sm">Jumlah Rekod</p><p className="mt-2 text-3xl font-black text-sky-950">{rekod.length}</p></div>
-                <div className="rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-100 to-white p-4 shadow-sm"><p className="text-xs font-semibold text-emerald-700 sm:text-sm">Hari Ini</p><p className="mt-2 text-3xl font-black text-emerald-950">{jumlahHariIni}</p></div>
-                <div className="rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-100 to-white p-4 shadow-sm"><p className="text-xs font-semibold text-amber-700 sm:text-sm">Sit-in</p><p className="mt-2 text-3xl font-black text-amber-950">{jumlahSitIn}</p></div>
+                <div className="rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-100 to-white p-4 shadow-sm"><p className="text-xs font-semibold text-sky-700 sm:text-sm">Jumlah Rekod Hari Ini</p><p className="mt-2 text-3xl font-black text-sky-950">{jumlahHariIni}</p></div>
+                <div className="rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-100 to-white p-4 shadow-sm"><p className="text-xs font-semibold text-emerald-700 sm:text-sm">Kelas Direkod Hari Ini</p><p className="mt-2 text-3xl font-black text-emerald-950">{jumlahKelasDirekodHariIni}</p></div>
+                <div className="rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-100 to-white p-4 shadow-sm"><p className="text-xs font-semibold text-amber-700 sm:text-sm">Sit-in Hari Ini</p><p className="mt-2 text-3xl font-black text-amber-950">{jumlahSitIn}</p></div>
               </div>
 
               <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-sky-50 to-indigo-50 p-4 shadow-sm md:p-6">
