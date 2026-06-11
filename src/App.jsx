@@ -111,6 +111,82 @@ function getMasaPaparanKelas(kelas, hari) {
   return masaList.slice(0, indexAkhir + 1);
 }
 
+function getMinitSemasa() {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+function getJulatMasa(masa) {
+  const [mula, tamat] = String(masa || "")
+    .replace(" (REHAT)", "")
+    .split(" - ")
+    .map((item) => item.trim());
+
+  const [jamMula, minitMula] = mula.split(":").map(Number);
+  const [jamTamat, minitTamat] = tamat.split(":").map(Number);
+
+  return {
+    mula: jamMula * 60 + minitMula,
+    tamat: jamTamat * 60 + minitTamat
+  };
+}
+
+function getIndexMasaSemasa(senaraiMasa, minitSemasa) {
+  if (!senaraiMasa.length) return -1;
+
+  for (let index = 0; index < senaraiMasa.length; index += 1) {
+    const masa = senaraiMasa[index];
+    const { mula, tamat } = getJulatMasa(masa);
+
+    if (minitSemasa >= mula && minitSemasa < tamat) {
+      if (!masa.includes("REHAT")) return index;
+
+      const selepasRehat = senaraiMasa.findIndex(
+        (item, itemIndex) => itemIndex > index && !item.includes("REHAT")
+      );
+
+      return selepasRehat;
+    }
+  }
+
+  const slotAkanDatang = senaraiMasa.findIndex((masa) => {
+    const { mula } = getJulatMasa(masa);
+    return !masa.includes("REHAT") && minitSemasa < mula;
+  });
+
+  return slotAkanDatang;
+}
+
+function isMasaBerturutanDibenarkan(senaraiMasa, masaDipilih, indexMasaSemasa, targetIndex) {
+  if (indexMasaSemasa < 0 || targetIndex < indexMasaSemasa) return false;
+  if (targetIndex === indexMasaSemasa) return true;
+
+  for (let index = indexMasaSemasa; index < targetIndex; index += 1) {
+    const masa = senaraiMasa[index];
+    if (!masa.includes("REHAT") && !masaDipilih.includes(masa)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function susunMasaBerturutan(senaraiMasa, masaDipilih, indexMasaSemasa) {
+  if (indexMasaSemasa < 0) return [];
+
+  const pilihan = new Set(masaDipilih);
+  const hasil = [];
+
+  for (let index = indexMasaSemasa; index < senaraiMasa.length; index += 1) {
+    const masa = senaraiMasa[index];
+    if (masa.includes("REHAT")) continue;
+    if (!pilihan.has(masa)) break;
+    hasil.push(masa);
+  }
+
+  return hasil;
+}
+
 function kiraKehadiranWaktuKelas(kelas, hari, tarikh, rekod) {
   const waktuWajib = getWaktuWajibKelas(kelas, hari);
   const jumlahWaktu = waktuWajib.length;
@@ -169,6 +245,8 @@ export default function BorangMMIApp() {
   const [search, setSearch] = useState("");
   const [selectedKelas, setSelectedKelas] = useState("");
   const [message, setMessage] = useState("");
+  const [submitPreview, setSubmitPreview] = useState(null);
+  const [minitSemasa, setMinitSemasa] = useState(getMinitSemasa);
   const [activeTab, setActiveTab] = useState("rekod");
   const [guruList, setGuruList] = useState([]);
   const [kelasList, setKelasList] = useState([]);
@@ -194,6 +272,14 @@ const [compileKelas, setCompileKelas] = useState("SEMUA");
       setIsAdminLoggedIn(!!user);
     });
     return () => unsubscribeAuth();
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setMinitSemasa(getMinitSemasa());
+    }, 30000);
+
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -264,6 +350,11 @@ const [compileKelas, setCompileKelas] = useState("SEMUA");
   const masaListPaparan = useMemo(
     () => getMasaPaparanKelas(form.kelas, today.hari),
     [form.kelas, today.hari]
+  );
+
+  const indexMasaSemasa = useMemo(
+    () => getIndexMasaSemasa(masaListPaparan, minitSemasa),
+    [masaListPaparan, minitSemasa]
   );
 
   const guruYangDigantiList = useMemo(
@@ -502,8 +593,18 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
   function toggleMasa(value) {
     setForm((prev) => {
+      const targetIndex = masaListPaparan.indexOf(value);
+
+      if (
+        value.includes("REHAT") ||
+        !isMasaBerturutanDibenarkan(masaListPaparan, prev.masa, indexMasaSemasa, targetIndex)
+      ) {
+        return prev;
+      }
+
       const exists = prev.masa.includes(value);
-      const masa = exists ? prev.masa.filter((item) => item !== value) : [...prev.masa, value];
+      const masaBaru = exists ? prev.masa.filter((item) => item !== value) : [...prev.masa, value];
+      const masa = susunMasaBerturutan(masaListPaparan, masaBaru, indexMasaSemasa);
       return { ...prev, masa };
     });
   }
@@ -521,9 +622,19 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     return;
   }
 
-  // Simpan kelas dipilih supaya kekal selepas submit
-  const selectedClass = form.kelas;
+  setSubmitPreview({
+    kelas: form.kelas,
+    guru: form.guru,
+    masa: [...form.masa],
+    jenisGuru: form.jenisGuru,
+    guruYangDiganti: form.jenisGuru === "Guru Sit-in" ? form.guruYangDiganti : ""
+  });
+}
 
+  async function confirmSubmit() {
+  if (!submitPreview) return;
+
+  const selectedClass = submitPreview.kelas;
   const info = getTodayInfo();
 
   try {
@@ -533,13 +644,13 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       masaHantar: info.masaHantar,
 
       kelas: selectedClass,
-      guru: form.guru,
+      guru: submitPreview.guru,
 
-      masa: form.masa.join(", "),
-      masaArray: form.masa,
+      masa: submitPreview.masa.join(", "),
+      masaArray: submitPreview.masa,
 
-      jenisGuru: form.jenisGuru,
-      guruYangDiganti: form.jenisGuru === "Guru Sit-in" ? form.guruYangDiganti : "",
+      jenisGuru: submitPreview.jenisGuru,
+      guruYangDiganti: submitPreview.guruYangDiganti,
 
       createdAt: serverTimestamp()
     });
@@ -556,6 +667,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       guruYangDiganti: ""
     });
 
+    setSubmitPreview(null);
     setMessage(
       `Rekod MMI berjaya dihantar. Dashboard kini memaparkan rekod untuk ${selectedClass} sahaja.`
     );
@@ -1170,12 +1282,18 @@ useEffect(() => {
                     {masaListPaparan.map((masa) => {
                       const checked = form.masa.includes(masa);
                       const isRehat = masa.includes("REHAT");
+                      const indexMasa = masaListPaparan.indexOf(masa);
+                      const isSelectable =
+                        !isRehat &&
+                        isMasaBerturutanDibenarkan(masaListPaparan, form.masa, indexMasaSemasa, indexMasa);
                       return (
                         <label
                           key={masa}
                           className={`flex min-h-14 items-center gap-3 rounded-2xl border p-3 transition ${
                             isRehat
                               ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70"
+                              : !isSelectable
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70"
                               : checked
                                 ? "border-slate-900 bg-slate-950 text-white"
                                 : "border-slate-200 bg-white text-slate-800"
@@ -1185,8 +1303,8 @@ useEffect(() => {
                             type="checkbox"
                             className="h-5 w-5"
                             checked={checked}
-                            disabled={isRehat}
-                            onChange={() => !isRehat && toggleMasa(masa)}
+                            disabled={!isSelectable}
+                            onChange={() => isSelectable && toggleMasa(masa)}
                           />
                           <span className="text-sm font-semibold">
                             {masa}
@@ -1233,6 +1351,59 @@ useEffect(() => {
                 <button type="submit" className="h-14 w-full rounded-2xl bg-sky-700 px-4 text-base font-black text-white shadow-sm transition hover:bg-sky-800 active:scale-[0.99]">Hantar Rekod</button>
                 {message && <div className="rounded-2xl bg-slate-100 p-3 text-sm font-medium text-slate-700">{message}</div>}
               </form>
+
+              {submitPreview && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+                  <div className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl">
+                    <h3 className="text-xl font-black text-slate-950">Sahkan Rekod MMI</h3>
+                    <p className="mt-1 text-sm text-slate-500">Sila semak maklumat sebelum rekod dihantar.</p>
+
+                    <div className="mt-4 space-y-3 rounded-3xl bg-slate-50 p-4 text-sm">
+                      <div className="flex justify-between gap-4">
+                        <span className="font-bold text-slate-500">Kelas</span>
+                        <span className="text-right font-black text-slate-950">{submitPreview.kelas}</span>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <span className="font-bold text-slate-500">Nama Guru</span>
+                        <span className="text-right font-black text-slate-950">{submitPreview.guru}</span>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <span className="font-bold text-slate-500">Jenis Guru</span>
+                        <span className="text-right font-black text-slate-950">{submitPreview.jenisGuru}</span>
+                      </div>
+                      {submitPreview.jenisGuru === "Guru Sit-in" && (
+                        <div className="flex justify-between gap-4">
+                          <span className="font-bold text-slate-500">Guru Diganti</span>
+                          <span className="text-right font-black text-slate-950">{submitPreview.guruYangDiganti}</span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="font-bold text-slate-500">Waktu</span>
+                        <div className="mt-2 rounded-2xl bg-white p-3 font-black leading-6 text-slate-950">
+                          {submitPreview.masa.join(", ")}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSubmitPreview(null)}
+                        className="h-12 rounded-2xl border border-slate-200 px-4 text-sm font-black text-slate-700"
+                      >
+                        Semak Semula
+                      </button>
+                      <button
+                        type="button"
+                        onClick={confirmSubmit}
+                        className="h-12 rounded-2xl bg-sky-700 px-4 text-sm font-black text-white hover:bg-sky-800"
+                      >
+                        Sahkan Hantar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-4 md:space-y-6">
