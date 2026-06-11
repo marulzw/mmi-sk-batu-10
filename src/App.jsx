@@ -1307,7 +1307,9 @@ useEffect(() => {
 
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-slate-700">Masa</label>
-                  <p className="text-xs text-slate-500">Boleh pilih lebih daripada satu masa.</p>
+                  <p className="text-xs text-slate-500">
+                    Pilih slot waktu yang diajar. Cikgu boleh memilih beberapa slot secara berturut-turut. Slot yang belum sampai waktu hanya boleh dipilih jika ia bersambung dengan slot semasa atau slot sebelumnya.
+                  </p>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
                     {masaListPaparan.map((masa) => {
                       const checked = form.masa.includes(masa);
