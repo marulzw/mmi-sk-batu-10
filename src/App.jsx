@@ -132,52 +132,79 @@ function getJulatMasa(masa) {
 }
 
 function getIndexMasaSemasa(senaraiMasa, minitSemasa) {
-  if (!senaraiMasa.length) return -1;
+  let indexSemasaAtauLepas = -1;
 
   for (let index = 0; index < senaraiMasa.length; index += 1) {
     const masa = senaraiMasa[index];
     const { mula, tamat } = getJulatMasa(masa);
 
+    if (masa.includes("REHAT")) continue;
+
     if (minitSemasa >= mula && minitSemasa < tamat) {
-      if (!masa.includes("REHAT")) return index;
+      return index;
+    }
 
-      const selepasRehat = senaraiMasa.findIndex(
-        (item, itemIndex) => itemIndex > index && !item.includes("REHAT")
-      );
-
-      return selepasRehat;
+    if (minitSemasa >= tamat) {
+      indexSemasaAtauLepas = index;
     }
   }
 
-  const slotAkanDatang = senaraiMasa.findIndex((masa) => {
-    const { mula } = getJulatMasa(masa);
-    return !masa.includes("REHAT") && minitSemasa < mula;
-  });
+  return indexSemasaAtauLepas;
+}
 
-  return slotAkanDatang;
+function getIndexBukanRehatTerdekat(senaraiMasa, mulaIndex, arah) {
+  for (
+    let index = mulaIndex + arah;
+    index >= 0 && index < senaraiMasa.length;
+    index += arah
+  ) {
+    if (!senaraiMasa[index].includes("REHAT")) return index;
+  }
+
+  return -1;
+}
+
+function getIndeksMasaDipilih(senaraiMasa, masaDipilih) {
+  return masaDipilih
+    .map((masa) => senaraiMasa.indexOf(masa))
+    .filter((index) => index >= 0 && !senaraiMasa[index].includes("REHAT"))
+    .sort((a, b) => a - b);
 }
 
 function isMasaBerturutanDibenarkan(senaraiMasa, masaDipilih, indexMasaSemasa, targetIndex) {
-  if (indexMasaSemasa < 0 || targetIndex < indexMasaSemasa) return false;
-  if (targetIndex === indexMasaSemasa) return true;
+  if (targetIndex < 0) return false;
 
-  for (let index = indexMasaSemasa; index < targetIndex; index += 1) {
-    const masa = senaraiMasa[index];
-    if (!masa.includes("REHAT") && !masaDipilih.includes(masa)) {
-      return false;
-    }
+  const targetMasa = senaraiMasa[targetIndex];
+  if (!targetMasa || targetMasa.includes("REHAT")) return false;
+  if (masaDipilih.includes(targetMasa)) return true;
+
+  const indeksDipilih = getIndeksMasaDipilih(senaraiMasa, masaDipilih);
+
+  if (indeksDipilih.length === 0) {
+    return targetIndex <= indexMasaSemasa;
   }
 
-  return true;
+  const indexAwal = indeksDipilih[0];
+  const indexAkhir = indeksDipilih[indeksDipilih.length - 1];
+  const indexSebelum = getIndexBukanRehatTerdekat(senaraiMasa, indexAwal, -1);
+  const indexSelepas = getIndexBukanRehatTerdekat(senaraiMasa, indexAkhir, 1);
+
+  if (targetIndex === indexSebelum) {
+    return targetIndex <= indexMasaSemasa;
+  }
+
+  return targetIndex === indexSelepas;
 }
 
-function susunMasaBerturutan(senaraiMasa, masaDipilih, indexMasaSemasa) {
-  if (indexMasaSemasa < 0) return [];
+function susunMasaBerturutan(senaraiMasa, masaDipilih) {
+  const indeksDipilih = getIndeksMasaDipilih(senaraiMasa, masaDipilih);
+  if (indeksDipilih.length === 0) return [];
 
+  const indexMula = indeksDipilih[0];
   const pilihan = new Set(masaDipilih);
   const hasil = [];
 
-  for (let index = indexMasaSemasa; index < senaraiMasa.length; index += 1) {
+  for (let index = indexMula; index < senaraiMasa.length; index += 1) {
     const masa = senaraiMasa[index];
     if (masa.includes("REHAT")) continue;
     if (!pilihan.has(masa)) break;
@@ -592,21 +619,24 @@ data = data.filter((item) => item.tarikh === today.tarikh);
   }
 
   function toggleMasa(value) {
+    const targetIndex = masaListPaparan.indexOf(value);
+
+    if (
+      value.includes("REHAT") ||
+      !isMasaBerturutanDibenarkan(masaListPaparan, form.masa, indexMasaSemasa, targetIndex)
+    ) {
+      setMessage("Waktu ini belum sampai. Sila pilih slot waktu semasa atau slot yang bersambung secara berturut-turut.");
+      return;
+    }
+
     setForm((prev) => {
-      const targetIndex = masaListPaparan.indexOf(value);
-
-      if (
-        value.includes("REHAT") ||
-        !isMasaBerturutanDibenarkan(masaListPaparan, prev.masa, indexMasaSemasa, targetIndex)
-      ) {
-        return prev;
-      }
-
       const exists = prev.masa.includes(value);
       const masaBaru = exists ? prev.masa.filter((item) => item !== value) : [...prev.masa, value];
-      const masa = susunMasaBerturutan(masaListPaparan, masaBaru, indexMasaSemasa);
+      const masa = susunMasaBerturutan(masaListPaparan, masaBaru);
       return { ...prev, masa };
     });
+
+    setMessage("");
   }
 
   async function handleSubmit(e) {
@@ -1282,18 +1312,12 @@ useEffect(() => {
                     {masaListPaparan.map((masa) => {
                       const checked = form.masa.includes(masa);
                       const isRehat = masa.includes("REHAT");
-                      const indexMasa = masaListPaparan.indexOf(masa);
-                      const isSelectable =
-                        !isRehat &&
-                        isMasaBerturutanDibenarkan(masaListPaparan, form.masa, indexMasaSemasa, indexMasa);
                       return (
                         <label
                           key={masa}
                           className={`flex min-h-14 items-center gap-3 rounded-2xl border p-3 transition ${
                             isRehat
                               ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70"
-                              : !isSelectable
-                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70"
                               : checked
                                 ? "border-slate-900 bg-slate-950 text-white"
                                 : "border-slate-200 bg-white text-slate-800"
@@ -1303,8 +1327,8 @@ useEffect(() => {
                             type="checkbox"
                             className="h-5 w-5"
                             checked={checked}
-                            disabled={!isSelectable}
-                            onChange={() => isSelectable && toggleMasa(masa)}
+                            disabled={isRehat}
+                            onChange={() => !isRehat && toggleMasa(masa)}
                           />
                           <span className="text-sm font-semibold">
                             {masa}
