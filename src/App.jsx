@@ -196,11 +196,13 @@ function isMasaBerturutanDibenarkan(senaraiMasa, masaDipilih, indexMasaSemasa, t
   return targetIndex === indexSelepas;
 }
 
-function susunMasaBerturutan(senaraiMasa, masaDipilih) {
+function susunMasaBerturutan(senaraiMasa, masaDipilih, indexMasaSemasa = senaraiMasa.length - 1) {
   const indeksDipilih = getIndeksMasaDipilih(senaraiMasa, masaDipilih);
   if (indeksDipilih.length === 0) return [];
 
   const indexMula = indeksDipilih[0];
+  if (indexMula > indexMasaSemasa) return [];
+
   const pilihan = new Set(masaDipilih);
   const hasil = [];
 
@@ -632,7 +634,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     setForm((prev) => {
       const exists = prev.masa.includes(value);
       const masaBaru = exists ? prev.masa.filter((item) => item !== value) : [...prev.masa, value];
-      const masa = susunMasaBerturutan(masaListPaparan, masaBaru);
+      const masa = susunMasaBerturutan(masaListPaparan, masaBaru, indexMasaSemasa);
       return { ...prev, masa };
     });
 
@@ -652,10 +654,17 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     return;
   }
 
+  const masaSah = susunMasaBerturutan(masaListPaparan, form.masa, indexMasaSemasa);
+  if (masaSah.length !== form.masa.length) {
+    setForm((prev) => ({ ...prev, masa: masaSah }));
+    setMessage("Waktu ini belum sampai. Sila pilih slot waktu semasa atau slot yang bersambung secara berturut-turut.");
+    return;
+  }
+
   setSubmitPreview({
     kelas: form.kelas,
     guru: form.guru,
-    masa: [...form.masa],
+    masa: [...masaSah],
     jenisGuru: form.jenisGuru,
     guruYangDiganti: form.jenisGuru === "Guru Sit-in" ? form.guruYangDiganti : ""
   });
