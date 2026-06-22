@@ -35,6 +35,7 @@ const KELAS_COLLECTION = "senarai_kelas";
 // TAMBAH INI
 const LAPORAN_COLLECTION = "laporan_bulanan";
 const SLOT_TIME_MESSAGE = "Waktu PdP yang dipilih belum bermula.";
+const PERHIMPUNAN_LABEL = "Perhimpunan/ Mentor-Mentee/ Nilam";
 const chartColors = ["#0f172a", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#8b5cf6"];
 
 const bulanPilihan = [
@@ -110,6 +111,18 @@ function getMasaPaparanKelas(kelas, hari) {
   if (indexAkhir < 0) return masaList;
 
   return masaList.slice(0, indexAkhir + 1);
+}
+
+function isPerhimpunanSelasa(hari, masa) {
+  return hari === "Selasa" && masa === "7:15 - 7:45";
+}
+
+function isSlotTidakBolehPilih(hari, masa) {
+  return masa.includes("REHAT") || isPerhimpunanSelasa(hari, masa);
+}
+
+function getLabelMasaPaparan(hari, masa) {
+  return isPerhimpunanSelasa(hari, masa) ? `${masa} (${PERHIMPUNAN_LABEL})` : masa;
 }
 
 function getMinitSemasa() {
@@ -222,9 +235,6 @@ function kiraKehadiranWaktuKelas(kelas, hari, tarikh, rekod) {
   const jumlahWaktu = waktuWajib.length;
 
   const waktuDaftar = waktuWajib.reduce((jumlah, waktu) => {
-    const isPerhimpunanSelasa =
-      hari === "Selasa" && waktu === "7:15 - 7:45";
-
     const adaRekod = rekod.some(
       (item) =>
         item.tarikh === tarikh &&
@@ -232,15 +242,12 @@ function kiraKehadiranWaktuKelas(kelas, hari, tarikh, rekod) {
         String(item.masa || "").includes(waktu)
     );
 
-    return isPerhimpunanSelasa || adaRekod ? jumlah + 1 : jumlah;
+    return isPerhimpunanSelasa(hari, waktu) || adaRekod ? jumlah + 1 : jumlah;
   }, 0);
 
   const waktuTidakDaftar = Math.max(jumlahWaktu - waktuDaftar, 0);
 
   const senaraiWaktuTidakDaftar = waktuWajib.filter((waktu) => {
-    const isPerhimpunanSelasa =
-      hari === "Selasa" && waktu === "7:15 - 7:45";
-
     const adaRekod = rekod.some(
       (item) =>
         item.tarikh === tarikh &&
@@ -248,7 +255,7 @@ function kiraKehadiranWaktuKelas(kelas, hari, tarikh, rekod) {
         String(item.masa || "").includes(waktu)
     );
 
-    return !(isPerhimpunanSelasa || adaRekod);
+    return !(isPerhimpunanSelasa(hari, waktu) || adaRekod);
   });
 
   return {
@@ -609,7 +616,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       if (field !== "kelas") return { ...prev, [field]: value };
 
       const masaDibenarkan = getMasaPaparanKelas(value, today.hari).filter(
-        (masa) => !masa.includes("REHAT")
+        (masa) => !isSlotTidakBolehPilih(today.hari, masa)
       );
 
       return {
@@ -626,7 +633,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     const targetIndex = masaListPaparan.indexOf(value);
 
     if (
-      value.includes("REHAT") ||
+      isSlotTidakBolehPilih(today.hari, value) ||
       !isMasaBerturutanDibenarkan(masaListPaparan, form.masa, indexMasaSemasa, targetIndex)
     ) {
       setMessage(SLOT_TIME_MESSAGE);
@@ -870,8 +877,9 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
         const rekodSlotHarian = hariTidakAktif
           ? []
-          : getMasaPaparanKelas(kelasNama, hari).map((masa) => {
+            : getMasaPaparanKelas(kelasNama, hari).map((masa) => {
               const isRehatRow = masa.includes("REHAT");
+              const isPerhimpunanRow = isPerhimpunanSelasa(hari, masa);
               const rekodSlot = rekodHarian.find((item) =>
                 Array.isArray(item.masaArray)
                   ? item.masaArray.includes(masa)
@@ -886,6 +894,18 @@ data = data.filter((item) => item.tarikh === today.tarikh);
                   guru: "Waktu Rehat",
                   guruYangDiganti: "-",
                   jenisGuru: "REHAT",
+                  masaHantar: "-"
+                };
+              }
+
+              if (isPerhimpunanRow) {
+                return {
+                  isPerhimpunanRow: true,
+                  masa,
+                  kelas: kelasNama,
+                  guru: PERHIMPUNAN_LABEL,
+                  guruYangDiganti: "-",
+                  jenisGuru: "-",
                   masaHantar: "-"
                 };
               }
@@ -947,7 +967,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
               y = tambahHeaderJadualCompilePDF(docPdf, 60);
             }
 
-            if (item.isRehatRow) {
+            if (item.isRehatRow || item.isPerhimpunanRow) {
               docPdf.setFillColor(254, 243, 199);
             } else if (index % 2 === 0) {
               docPdf.setFillColor(248, 250, 252);
@@ -967,7 +987,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
               String(item.masaHantar || "-"),
             ];
 
-            docPdf.setFont("helvetica", item.isRehatRow ? "bold" : "normal");
+            docPdf.setFont("helvetica", item.isRehatRow || item.isPerhimpunanRow ? "bold" : "normal");
             docPdf.setFontSize(8.2);
 
             row.forEach((value, colIndex) => {
@@ -1330,12 +1350,12 @@ useEffect(() => {
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
                     {masaListPaparan.map((masa) => {
                       const checked = form.masa.includes(masa);
-                      const isRehat = masa.includes("REHAT");
+                      const isTidakBolehPilih = isSlotTidakBolehPilih(today.hari, masa);
                       return (
                         <div key={masa} className="space-y-2">
                           <label
                             className={`flex min-h-14 items-center gap-3 rounded-2xl border p-3 transition ${
-                              isRehat
+                              isTidakBolehPilih
                                 ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70"
                                 : checked
                                   ? "border-slate-900 bg-slate-950 text-white"
@@ -1346,11 +1366,11 @@ useEffect(() => {
                               type="checkbox"
                               className="h-5 w-5"
                               checked={checked}
-                              disabled={isRehat}
-                              onChange={() => !isRehat && toggleMasa(masa)}
+                              disabled={isTidakBolehPilih}
+                              onChange={() => !isTidakBolehPilih && toggleMasa(masa)}
                             />
                             <span className="text-sm font-semibold">
-                              {masa}
+                              {getLabelMasaPaparan(today.hari, masa)}
                               
                             </span>
                           </label>
@@ -1463,18 +1483,11 @@ useEffect(() => {
               </div>
 
               <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-sky-50 to-indigo-50 p-4 shadow-sm md:p-6">
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  
-                  <div className="flex flex-wrap gap-2">
-                    <button className="flex h-11 items-center rounded-2xl border px-4 text-sm font-bold disabled:opacity-50" onClick={exportCSV} disabled={filteredRekod.length === 0}><Download className="mr-2 h-4 w-4" /> CSV</button>
-                    {isAdminLoggedIn && <button className="flex h-11 items-center rounded-2xl border px-4 text-sm font-bold text-red-600 disabled:opacity-50" onClick={clearData} disabled={rekod.length === 0}><Trash2 className="mr-2 h-4 w-4" /> Padam</button>}
+                {isAdminLoggedIn && (
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    <button className="flex h-11 items-center rounded-2xl border px-4 text-sm font-bold text-red-600 disabled:opacity-50" onClick={clearData} disabled={rekod.length === 0}><Trash2 className="mr-2 h-4 w-4" /> Padam</button>
                   </div>
-                </div>
-
-                <div className="relative mb-4">
-                  <Search className="absolute left-4 top-4 h-5 w-5 text-slate-400" />
-                  <input className="h-14 w-full rounded-2xl border border-slate-200 py-3 pl-12 pr-4 text-base outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-100" placeholder="Cari tarikh, guru, kelas atau masa" value={search} onChange={(e) => setSearch(e.target.value)} />
-                </div>
+                )}
 
                 <div className="space-y-3 md:hidden">
                   {filteredRekod.length === 0 ? <div className="rounded-2xl bg-slate-100 p-5 text-center text-sm text-slate-500">Belum ada rekod.</div> : filteredRekod.map((item, index) => (
