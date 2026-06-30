@@ -55,6 +55,10 @@ function dapatkanTopSitInKelas(data, had = 5) {
     .map(([nama, jumlah]) => ({ nama, jumlah }));
 }
 
+function normalisasiNama(nama) {
+  return String(nama || "").trim().toLowerCase();
+}
+
 function cariLogoSekolah() {
   const lokasiCalon = [
     path.join(__dirname, "assets", "logo-sekolah.png"),
@@ -312,6 +316,7 @@ async function janaRumusanAI({
   topKelas,
   topGuru,
   topSitInKelas,
+  guruTiadaRekod,
 }) {
   try {
     const prompt = `
@@ -334,6 +339,9 @@ Data laporan:
 - Guru rekod tertinggi: ${
       topGuru.map((item) => `${item.nama} (${item.jumlah})`).join(", ") ||
       "Tiada data"
+    }
+- Guru tanpa rekod sepanjang bulan: ${
+      guruTiadaRekod.join(", ") || "Tiada"
     }
 - Kelas sit-in tertinggi: ${
       topSitInKelas
@@ -387,6 +395,7 @@ function janaPDFLaporan({
   topKelas,
   topGuru,
   topSitInKelas,
+  guruTiadaRekod,
   rumusanAI,
 }) {
   const namaFail = `laporan_${bulan}_${tahun}.pdf`;
@@ -570,6 +579,38 @@ lukisPieRingkas(
     );
   }
 
+  docPdf.moveDown(0.8);
+  resetKedudukan(docPdf);
+  pastikanRuang(docPdf, 110);
+
+  docPdf
+    .font("Helvetica-Bold")
+    .fontSize(10)
+    .fillColor("#0f172a")
+    .text("Guru Yang Tiada Rekod MMI Sepanjang Bulan", 50, docPdf.y, {
+      width: docPdf.page.width - 100,
+    });
+
+  docPdf.moveDown(0.3);
+  resetKedudukan(docPdf);
+
+  docPdf
+    .font("Helvetica")
+    .fontSize(10)
+    .fillColor("#111827")
+    .text(
+      guruTiadaRekod.length > 0
+        ? guruTiadaRekod.join(", ")
+        : "Tiada. Semua guru mempunyai sekurang-kurangnya satu rekod MMI dalam bulan ini.",
+      50,
+      docPdf.y,
+      {
+        width: docPdf.page.width - 100,
+        align: "justify",
+        lineGap: 4,
+      }
+    );
+
   tambahNomborHalaman(docPdf);
 
   docPdf.end();
@@ -581,7 +622,14 @@ lukisPieRingkas(
 
 async function dapatkanDataLaporan(bulan, tahun) {
   const rekodSnapshot = await admin.firestore().collection("rekod_mmi").get();
+  const guruSnapshot = await admin.firestore().collection("senarai_guru").get();
   const rekodBulanIni = [];
+  const senaraiGuru = [];
+
+  guruSnapshot.forEach((doc) => {
+    const nama = String(doc.data().nama || "").trim();
+    if (nama) senaraiGuru.push(nama);
+  });
 
   rekodSnapshot.forEach((doc) => {
     const data = doc.data();
@@ -619,6 +667,14 @@ async function dapatkanDataLaporan(bulan, tahun) {
   const topKelas = dapatkanTop(rekodBulanIni, "kelas", 5);
   const topGuru = dapatkanTop(rekodBulanIni, "guru", 5);
   const topSitInKelas = dapatkanTopSitInKelas(rekodBulanIni, 5);
+  const guruAdaRekod = new Set(
+    rekodBulanIni
+      .map((item) => normalisasiNama(item.guru))
+      .filter(Boolean)
+  );
+  const guruTiadaRekod = senaraiGuru
+    .filter((nama) => !guruAdaRekod.has(normalisasiNama(nama)))
+    .sort((a, b) => a.localeCompare(b, "ms", { numeric: true }));
 
   return {
     rekodBulanIni,
@@ -628,6 +684,7 @@ async function dapatkanDataLaporan(bulan, tahun) {
     topKelas,
     topGuru,
     topSitInKelas,
+    guruTiadaRekod,
   };
 }
 
@@ -639,6 +696,7 @@ async function janaDanSimpanLaporan({ bulan, tahun, manual = false }) {
     topKelas,
     topGuru,
     topSitInKelas,
+    guruTiadaRekod,
   } = await dapatkanDataLaporan(bulan, tahun);
 
   const rumusanAI = await janaRumusanAI({
@@ -650,6 +708,7 @@ async function janaDanSimpanLaporan({ bulan, tahun, manual = false }) {
     topKelas,
     topGuru,
     topSitInKelas,
+    guruTiadaRekod,
   });
 
   const tempFilePath = await janaPDFLaporan({
@@ -661,6 +720,7 @@ async function janaDanSimpanLaporan({ bulan, tahun, manual = false }) {
     topKelas,
     topGuru,
     topSitInKelas,
+    guruTiadaRekod,
     rumusanAI,
   });
 
@@ -696,6 +756,7 @@ async function janaDanSimpanLaporan({ bulan, tahun, manual = false }) {
     topKelas,
     topGuru,
     topSitInKelas,
+    guruTiadaRekod,
     rumusanAI,
     status: "Selesai",
     manual,
