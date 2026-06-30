@@ -405,8 +405,21 @@ const [compileKelas, setCompileKelas] = useState("SEMUA");
     [rekod, today.tarikh]
   );
 
-  const semuaKelasTiadaRekodHariIni =
-    kelasNames.length > 0 && rekodHariIni.length === 0;
+const semuaKelasTiadaRekodHariIni =
+  kelasNames.length > 0 && rekodHariIni.length === 0;
+
+  const senaraiLaporanPaparan = useMemo(() => {
+    const laporanDenganPdf = new Set(
+      senaraiLaporan
+        .filter((laporan) => laporan.pdfUrl)
+        .map((laporan) => `${String(laporan.bulan || "").toLowerCase()}-${laporan.tahun || ""}`)
+    );
+
+    return senaraiLaporan.filter((laporan) => {
+      const key = `${String(laporan.bulan || "").toLowerCase()}-${laporan.tahun || ""}`;
+      return laporan.pdfUrl || !laporanDenganPdf.has(key);
+    });
+  }, [senaraiLaporan]);
 
 
   const filteredRekod = useMemo(() => {
@@ -1730,13 +1743,13 @@ useEffect(() => {
             <div className="mb-6 rounded-[2rem] border border-slate-200 bg-slate-50 p-4">
   
 
-  {senaraiLaporan.length === 0 ? (
+  {senaraiLaporanPaparan.length === 0 ? (
     <div className="rounded-2xl bg-white p-4 text-sm text-slate-600">
       Belum ada laporan PDF dijana.
     </div>
   ) : (
     <div className="space-y-3">
-      {senaraiLaporan.map((laporan) => (
+      {senaraiLaporanPaparan.map((laporan) => (
         <div
           key={laporan.firebaseId}
           className="flex flex-col gap-3 rounded-2xl border bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -1765,14 +1778,6 @@ useEffect(() => {
     <span className="rounded-2xl bg-amber-100 px-4 py-2 text-center text-sm font-bold text-amber-700">
       PDF belum tersedia
     </span>
-
-    <button
-      type="button"
-      onClick={() => janaPDFLaporanDemo(laporan)}
-      className="mt-2 rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white"
-    >
-      Jana PDF Demo
-    </button>
   </div>
 )}
         </div>
