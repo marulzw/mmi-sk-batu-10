@@ -59,6 +59,14 @@ function normalisasiNama(nama) {
   return String(nama || "").trim().toLowerCase();
 }
 
+const GURU_DIKECUALIKAN_TIADA_REKOD = [
+  "Affra Binti Yahya",
+  "Azlin Bin Sylvia",
+  "Jainap Binti Jamaluddin @ Jateng",
+  "Noorliza Bt. Abdul Khalid",
+  "Hasmah Binti Basni",
+].map(normalisasiNama);
+
 function cariLogoSekolah() {
   const lokasiCalon = [
     path.join(__dirname, "assets", "logo-sekolah.png"),
@@ -343,6 +351,7 @@ Data laporan:
 - Guru tanpa rekod sepanjang bulan: ${
       guruTiadaRekod.join(", ") || "Tiada"
     }
+- Jumlah guru tanpa rekod selepas pengecualian: ${guruTiadaRekod.length}
 - Kelas sit-in tertinggi: ${
       topSitInKelas
         .map((item) => `${item.nama} (${item.jumlah})`)
@@ -600,7 +609,7 @@ lukisPieRingkas(
     .fillColor("#111827")
     .text(
       guruTiadaRekod.length > 0
-        ? guruTiadaRekod.join(", ")
+        ? `Jumlah: ${guruTiadaRekod.length} orang\nNama guru: ${guruTiadaRekod.join(", ")}`
         : "Tiada. Semua guru mempunyai sekurang-kurangnya satu rekod MMI dalam bulan ini.",
       50,
       docPdf.y,
@@ -673,7 +682,13 @@ async function dapatkanDataLaporan(bulan, tahun) {
       .filter(Boolean)
   );
   const guruTiadaRekod = senaraiGuru
-    .filter((nama) => !guruAdaRekod.has(normalisasiNama(nama)))
+    .filter((nama) => {
+      const namaNormal = normalisasiNama(nama);
+      return (
+        !guruAdaRekod.has(namaNormal) &&
+        !GURU_DIKECUALIKAN_TIADA_REKOD.includes(namaNormal)
+      );
+    })
     .sort((a, b) => a.localeCompare(b, "ms", { numeric: true }));
 
   return {
