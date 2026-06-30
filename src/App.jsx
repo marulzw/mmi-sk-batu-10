@@ -1225,6 +1225,21 @@ async function janaPDFLaporanDemo(laporan, autoMode = false) {
   }
 }
 
+async function deleteLaporanBulanan(laporan) {
+  if (!isAdminLoggedIn || !laporan?.firebaseId) return;
+
+  const tajukLaporan = laporan.tajuk || `Laporan Bulan ${laporan.bulan || ""}`;
+  const confirmDelete = window.confirm(`Padam ${tajukLaporan}?`);
+  if (!confirmDelete) return;
+
+  try {
+    await deleteDoc(doc(db, LAPORAN_COLLECTION, laporan.firebaseId));
+    setMessage(`${tajukLaporan} telah dipadam.`);
+  } catch {
+    setMessage("Gagal memadam laporan bulanan.");
+  }
+}
+
 useEffect(() => {
   if (!isAdminLoggedIn) return;
 
@@ -1763,23 +1778,33 @@ useEffect(() => {
             </p>
           </div>
 
-          {laporan.pdfUrl ? (
-  <button
-  type="button"
-  onClick={() => {
-    window.open(laporan.pdfUrl, "_self");
-  }}
-  className="rounded-2xl bg-sky-700 px-4 py-2 text-center text-sm font-bold text-white hover:bg-sky-800"
->
-  Muat Turun PDF
-</button>
-) : (
-  <div className="flex flex-col items-start">
-    <span className="rounded-2xl bg-amber-100 px-4 py-2 text-center text-sm font-bold text-amber-700">
-      PDF belum tersedia
-    </span>
-  </div>
-)}
+          <div className="flex flex-col gap-2 sm:items-end">
+            {laporan.pdfUrl ? (
+              <button
+                type="button"
+                onClick={() => {
+                  window.open(laporan.pdfUrl, "_self");
+                }}
+                className="rounded-2xl bg-sky-700 px-4 py-2 text-center text-sm font-bold text-white hover:bg-sky-800"
+              >
+                Muat Turun PDF
+              </button>
+            ) : (
+              <span className="rounded-2xl bg-amber-100 px-4 py-2 text-center text-sm font-bold text-amber-700">
+                PDF belum tersedia
+              </span>
+            )}
+
+            {isAdminLoggedIn && (
+              <button
+                type="button"
+                onClick={() => deleteLaporanBulanan(laporan)}
+                className="rounded-2xl border border-red-200 px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50"
+              >
+                Padam
+              </button>
+            )}
+          </div>
         </div>
       ))}
     </div>
