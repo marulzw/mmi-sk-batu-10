@@ -303,6 +303,8 @@ const [senaraiLaporan, setSenaraiLaporan] = useState([]);
 const [compileBulan, setCompileBulan] = useState(String(new Date().getMonth() + 1).padStart(2, "0"));
 const [compileTahun, setCompileTahun] = useState(String(new Date().getFullYear()));
 const [compileKelas, setCompileKelas] = useState("SEMUA");
+const [laporanBulan, setLaporanBulan] = useState(String(new Date().getMonth() + 1).padStart(2, "0"));
+const [laporanTahun, setLaporanTahun] = useState(String(new Date().getFullYear()));
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -1180,7 +1182,16 @@ async function janaLaporanBulananManual() {
 
   try {
 
-    setMessage("Sedang menjana laporan AI...");
+    if (!laporanBulan || !laporanTahun) {
+      setMessage("Sila pilih bulan dan tahun laporan terlebih dahulu.");
+      return;
+    }
+
+    const namaBulan =
+      bulanPilihan.find((item) => item.value === laporanBulan)?.label ||
+      laporanBulan;
+
+    setMessage(`Sedang menjana laporan AI ${namaBulan} ${laporanTahun}...`);
 
     const functions = getFunctions(app, "us-central1");
 
@@ -1189,9 +1200,12 @@ async function janaLaporanBulananManual() {
       "janaLaporanBulananManual"
     );
 
-    await janaLaporan();
+    await janaLaporan({
+      bulan: laporanBulan,
+      tahun: laporanTahun,
+    });
 
-    setMessage("Laporan berjaya dijana.");
+    setMessage(`Laporan ${namaBulan} ${laporanTahun} berjaya dijana.`);
 
     await dapatkanLaporanBulanan();
 
@@ -1748,12 +1762,49 @@ useEffect(() => {
               </div>
             )}
             {isAdminLoggedIn && (
-  <button
-    onClick={janaLaporanBulananManual}
-    className="mb-5 rounded-2xl bg-sky-700 px-5 py-3 text-sm font-black text-white hover:bg-sky-800"
-  >
-    Kemaskini Laporan Bulanan
-  </button>
+              <div className="mb-6 rounded-[2rem] border border-sky-100 bg-white/80 p-4">
+                <h3 className="mb-2 text-lg font-black text-slate-950">Jana Laporan Bulanan Keseluruhan</h3>
+                <p className="mb-4 text-sm text-slate-600">
+                  Pilih bulan dan tahun untuk menjana laporan bulanan keseluruhan.
+                </p>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-600">Bulan Laporan</label>
+                    <select
+                      value={laporanBulan}
+                      onChange={(e) => setLaporanBulan(e.target.value)}
+                      className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:ring-4 focus:ring-slate-100"
+                    >
+                      {bulanPilihan.map((bulan) => (
+                        <option key={bulan.value} value={bulan.value}>
+                          {bulan.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-600">Tahun Laporan</label>
+                    <input
+                      type="number"
+                      value={laporanTahun}
+                      onChange={(e) => setLaporanTahun(e.target.value)}
+                      className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:ring-4 focus:ring-slate-100"
+                    />
+                  </div>
+
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={janaLaporanBulananManual}
+                      className="h-12 w-full rounded-2xl bg-sky-700 px-4 text-sm font-black text-white hover:bg-sky-800"
+                    >
+                      Kemaskini Laporan
+                    </button>
+                  </div>
+                </div>
+              </div>
 )}
             <div className="mb-6 rounded-[2rem] border border-slate-200 bg-slate-50 p-4">
   

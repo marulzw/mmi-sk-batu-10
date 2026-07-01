@@ -25,6 +25,18 @@ function kiraPeratus(nilai, jumlah) {
   return jumlah > 0 ? ((nilai / jumlah) * 100).toFixed(1) : "0.0";
 }
 
+function dapatkanNamaBulan(bulanInput) {
+  const nomborBulan = Number(bulanInput);
+
+  if (!Number.isInteger(nomborBulan) || nomborBulan < 1 || nomborBulan > 12) {
+    return null;
+  }
+
+  return new Date(2026, nomborBulan - 1, 1).toLocaleString("ms-MY", {
+    month: "long",
+  });
+}
+
 function dapatkanTop(data, medan, had = 5) {
   const kiraan = {};
 
@@ -351,7 +363,7 @@ Data laporan:
 - Guru tanpa rekod sepanjang bulan: ${
       guruTiadaRekod.join(", ") || "Tiada"
     }
-- Jumlah guru tanpa rekod selepas pengecualian: ${guruTiadaRekod.length}
+- Jumlah guru tanpa rekod sepanjang bulan: ${guruTiadaRekod.length}
 - Kelas sit-in tertinggi: ${
       topSitInKelas
         .map((item) => `${item.nama} (${item.jumlah})`)
@@ -367,6 +379,7 @@ Arahan penulisan:
 - Perenggan 2: analisis pola Guru Mata Pelajaran dan Guru Sit-in.
 - Perenggan 3: cadangan tindakan pemantauan berdasarkan data.
 - Jangan berlebihan memuji.
+- Jangan gunakan frasa "selepas pengecualian" dalam laporan.
 - Jangan reka data baharu di luar data yang diberi.
 `;
 
@@ -805,13 +818,14 @@ exports.janaLaporanBulananManual = onRequest(
         return;
       }
 
+      const payload = req.body?.data || req.body || {};
       const sekarang = new Date();
-
-      const bulan = sekarang.toLocaleString("ms-MY", {
-        month: "long",
-      });
-
-      const tahun = sekarang.getFullYear();
+      const bulan =
+        dapatkanNamaBulan(payload.bulan) ||
+        sekarang.toLocaleString("ms-MY", {
+          month: "long",
+        });
+      const tahun = Number(payload.tahun) || sekarang.getFullYear();
 
       const hasil = await janaDanSimpanLaporan({
         bulan,
