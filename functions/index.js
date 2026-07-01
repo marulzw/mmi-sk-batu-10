@@ -123,6 +123,20 @@ function pastikanRuang(doc, tinggiBlok) {
   }
 }
 
+function buangMukaSuratKosongAkhir(doc) {
+  if (!Array.isArray(doc._pageBuffer)) return;
+
+  while (doc._pageBuffer.length > 1) {
+    const halamanAkhir = doc._pageBuffer[doc._pageBuffer.length - 1];
+    const panjangKandungan = halamanAkhir?.content?.uncompressedLength || 0;
+
+    if (panjangKandungan > 24) break;
+
+    doc._pageBuffer.pop();
+    doc.page = doc._pageBuffer[doc._pageBuffer.length - 1];
+  }
+}
+
 function resetKedudukan(doc) {
   doc.x = 50;
 }
@@ -360,9 +374,7 @@ Data laporan:
       topGuru.map((item) => `${item.nama} (${item.jumlah})`).join(", ") ||
       "Tiada data"
     }
-- Guru tanpa rekod sepanjang bulan: ${
-      guruTiadaRekod.join(", ") || "Tiada"
-    }
+- Guru tanpa rekod sepanjang bulan: ${guruTiadaRekod.length} orang
 - Jumlah guru tanpa rekod sepanjang bulan: ${guruTiadaRekod.length}
 - Kelas sit-in tertinggi: ${
       topSitInKelas
@@ -377,8 +389,9 @@ Arahan penulisan:
 - Tulis 3 perenggan sahaja.
 - Perenggan 1: ringkasan dapatan keseluruhan.
 - Perenggan 2: analisis pola Guru Mata Pelajaran dan Guru Sit-in.
-- Perenggan 3: cadangan tindakan pemantauan berdasarkan data.
+- Perenggan 3: cadangan tindakan pemantauan berdasarkan data tanpa menyebut nama individu guru yang tiada rekod.
 - Jangan berlebihan memuji.
+- Jangan sebut nama individu guru yang tiada rekod dalam rumusan pemantauan.
 - Jangan gunakan frasa "selepas pengecualian" dalam laporan.
 - Jangan reka data baharu di luar data yang diberi.
 `;
@@ -633,6 +646,7 @@ lukisPieRingkas(
       }
     );
 
+  buangMukaSuratKosongAkhir(docPdf);
   tambahNomborHalaman(docPdf);
 
   docPdf.end();
