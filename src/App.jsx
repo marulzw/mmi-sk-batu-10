@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import jsPDF from "jspdf";
-import { Download, Trash2, ClipboardCheck, Search, BarChart3, Settings, Wifi, WifiOff, Lock, LogOut } from "lucide-react";
+import { Download, Trash2, ClipboardCheck, Search, BarChart3, Settings, Wifi, WifiOff, Lock, LogOut, Moon, Sun } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, collection, addDoc, deleteDoc, doc, updateDoc, onSnapshot, orderBy, query, serverTimestamp } from "firebase/firestore";
@@ -297,6 +297,10 @@ export default function BorangMMIApp() {
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState("");
   const [currentAdmin, setCurrentAdmin] = useState(null);
+  const [theme, setTheme] = useState(() => {
+    if (typeof window === "undefined") return "light";
+    return window.localStorage.getItem("mmi-theme") || "light";
+  });
   
 // TAMBAH INI
 const [senaraiLaporan, setSenaraiLaporan] = useState([]);
@@ -305,6 +309,15 @@ const [compileTahun, setCompileTahun] = useState(String(new Date().getFullYear()
 const [compileKelas, setCompileKelas] = useState("SEMUA");
 const [laporanBulan, setLaporanBulan] = useState(String(new Date().getMonth() + 1).padStart(2, "0"));
 const [laporanTahun, setLaporanTahun] = useState(String(new Date().getFullYear()));
+const themeChartColors = theme === "dark"
+  ? ["#e2e8f0", "#34d399", "#fbbf24", "#fb7185", "#60a5fa", "#c084fc"]
+  : chartColors;
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    document.documentElement.style.colorScheme = theme;
+    window.localStorage.setItem("mmi-theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -1323,7 +1336,7 @@ useEffect(() => {
 }, [isAdminLoggedIn, senaraiLaporan, today.tarikh]);
 
   return (
-    <div className="min-h-screen bg-[#f5f7fb] px-3 py-4 sm:px-5 md:px-8">
+    <div className={`theme-root min-h-screen bg-[#f5f7fb] px-3 py-4 sm:px-5 md:px-8 ${theme === "dark" ? "dark" : ""}`}>
       <div className="mx-auto w-full max-w-7xl space-y-4 md:space-y-6">
         <div className="rounded-[2rem] border border-sky-100 bg-gradient-to-br from-sky-100 via-indigo-50 to-violet-100 p-4 shadow-md backdrop-blur md:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -1331,7 +1344,7 @@ useEffect(() => {
               <img
                 src="/logo-sekolah.png"
                 alt="Logo Sekolah"
-                className="h-20 w-20 rounded-2xl border border-white bg-white p-2 object-contain shadow-lg"
+                className="school-logo h-20 w-20 rounded-2xl border border-white bg-white p-2 object-contain shadow-lg"
               />
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 sm:text-sm">SK Batu 10, Sibu</p>
@@ -1349,6 +1362,15 @@ useEffect(() => {
                 {isOnlineDb ? <Wifi className="h-4 w-4 shrink-0" /> : <WifiOff className="h-4 w-4 shrink-0" />}
                 <span>{firebaseStatus}</span>
               </div>
+              <button
+                type="button"
+                onClick={() => setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"))}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-sky-100 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-sky-300 sm:col-span-2"
+                aria-label={theme === "dark" ? "Tukar ke mod cerah" : "Tukar ke mod gelap"}
+              >
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {theme === "dark" ? "Light Mode" : "Dark Mode"}
+              </button>
             </div>
           </div>
         </div>
@@ -1410,7 +1432,7 @@ useEffect(() => {
                           <label
                             className={`flex min-h-14 items-center gap-3 rounded-2xl border p-3 transition ${
                               isTidakBolehPilih
-                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70"
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600"
                                 : checked
                                   ? "border-slate-900 bg-slate-950 text-white"
                                   : "border-slate-200 bg-white text-slate-800"
@@ -1585,8 +1607,8 @@ useEffect(() => {
                         <YAxis allowDecimals={false} />
                         <Tooltip />
                         <Legend />
-                        <Bar dataKey="GMP" stackId="a" fill={chartColors[1]} />
-                        <Bar dataKey="SitIn" stackId="a" fill={chartColors[2]} />
+                        <Bar dataKey="GMP" stackId="a" fill={themeChartColors[1]} />
+                        <Bar dataKey="SitIn" stackId="a" fill={themeChartColors[2]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -1598,7 +1620,7 @@ useEffect(() => {
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie data={pieJenisGuruData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={95} label>
-                          {pieJenisGuruData.map((entry, index) => <Cell key={entry.name} fill={chartColors[index + 1]} />)}
+                          {pieJenisGuruData.map((entry, index) => <Cell key={entry.name} fill={themeChartColors[index + 1]} />)}
                         </Pie>
                         <Tooltip />
                         <Legend />
@@ -1616,7 +1638,7 @@ useEffect(() => {
                         <XAxis type="number" allowDecimals={false} />
                         <YAxis dataKey="kelas" type="category" width={90} tick={{ fontSize: 12 }} />
                         <Tooltip />
-                        <Bar dataKey="SitIn" fill={chartColors[2]} />
+                        <Bar dataKey="SitIn" fill={themeChartColors[2]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -1631,7 +1653,7 @@ useEffect(() => {
                         <XAxis dataKey="masa" angle={-45} textAnchor="end" interval={0} height={80} tick={{ fontSize: 11 }} />
                         <YAxis allowDecimals={false} />
                         <Tooltip />
-                        <Bar dataKey="Rekod" fill={chartColors[4]} />
+                        <Bar dataKey="Rekod" fill={themeChartColors[4]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -1885,9 +1907,9 @@ useEffect(() => {
                       <YAxis allowDecimals={false} />
                       <Tooltip />
                       <Legend />
-                      <Line type="monotone" dataKey="Jumlah" stroke={chartColors[0]} strokeWidth={3} />
-                      <Line type="monotone" dataKey="GMP" stroke={chartColors[1]} strokeWidth={3} />
-                      <Line type="monotone" dataKey="SitIn" stroke={chartColors[2]} strokeWidth={3} />
+                      <Line type="monotone" dataKey="Jumlah" stroke={themeChartColors[0]} strokeWidth={3} />
+                      <Line type="monotone" dataKey="GMP" stroke={themeChartColors[1]} strokeWidth={3} />
+                      <Line type="monotone" dataKey="SitIn" stroke={themeChartColors[2]} strokeWidth={3} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>

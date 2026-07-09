@@ -9,7 +9,184 @@
   <link rel="icon" type="image/png" href="/icon-192.png" />
   
     <title>Borang MMI SK Batu 10</title>
+    <script>
+      window.tailwind = { config: { darkMode: "class" } };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .dark body {
+        background: #07111f;
+      }
+
+      .dark .theme-root {
+        color: #e5edf7;
+      }
+
+      .dark [class*="bg-[#f5f7fb]"],
+      .dark [class*="bg-slate-100"] {
+        background-color: #07111f !important;
+      }
+
+      .dark [class*="bg-slate-50"],
+      .dark [class*="bg-white"],
+      .dark [class*="from-white"],
+      .dark [class*="via-sky-50"],
+      .dark [class*="to-indigo-50"] {
+        background-color: #101c2e !important;
+        background-image: none !important;
+      }
+
+      .dark [class*="from-sky-100"],
+      .dark [class*="to-violet-100"],
+      .dark [class*="to-white"],
+      .dark [class*="from-emerald-100"],
+      .dark [class*="from-amber-100"],
+      .dark [class*="from-red-100"],
+      .dark [class*="to-rose-50"],
+      .dark [class*="to-green-50"],
+      .dark [class*="to-indigo-100"] {
+        background-image: none !important;
+      }
+
+      .dark [class*="bg-sky-50"],
+      .dark [class*="bg-sky-100"],
+      .dark [class*="bg-[#EEF4FF]"] {
+        background-color: #0f2d45 !important;
+      }
+
+      .dark [class*="bg-emerald-50"],
+      .dark [class*="bg-emerald-100"],
+      .dark [class*="bg-green-100"] {
+        background-color: #0b3b2e !important;
+      }
+
+      .dark [class*="bg-amber-50"],
+      .dark [class*="bg-amber-100"] {
+        background-color: #422f0a !important;
+      }
+
+      .dark [class*="bg-red-100"],
+      .dark [class*="bg-rose-100"] {
+        background-color: #4a141b !important;
+      }
+
+      .dark [class*="bg-slate-950"] {
+        background-color: #38bdf8 !important;
+        color: #06111f !important;
+      }
+
+      .dark [class*="text-slate-950"],
+      .dark [class*="text-slate-900"],
+      .dark [class*="text-slate-800"],
+      .dark [class*="text-slate-700"],
+      .dark .text-\[\#102A43\] {
+        color: #f8fafc !important;
+      }
+
+      .dark [class*="text-slate-600"],
+      .dark [class*="text-slate-500"],
+      .dark .text-\[\#5B6B82\] {
+        color: #cbd5e1 !important;
+      }
+
+      .dark [class*="text-slate-400"] {
+        color: #94a3b8 !important;
+      }
+
+      .dark [class*="text-sky-700"],
+      .dark [class*="text-sky-900"],
+      .dark [class*="text-sky-950"] {
+        color: #bae6fd !important;
+      }
+
+      .dark [class*="text-emerald-700"],
+      .dark [class*="text-emerald-800"],
+      .dark [class*="text-emerald-950"],
+      .dark [class*="text-green-700"],
+      .dark [class*="text-green-900"] {
+        color: #bbf7d0 !important;
+      }
+
+      .dark [class*="text-amber-700"],
+      .dark [class*="text-amber-800"],
+      .dark [class*="text-amber-950"] {
+        color: #fde68a !important;
+      }
+
+      .dark [class*="text-red-600"],
+      .dark [class*="text-red-700"],
+      .dark [class*="text-rose-700"],
+      .dark [class*="text-rose-800"],
+      .dark [class*="text-rose-900"] {
+        color: #fecdd3 !important;
+      }
+
+      .dark [class*="border-slate-200"],
+      .dark [class*="border-sky-100"],
+      .dark [class*="border-sky-200"],
+      .dark [class*="border-emerald-200"],
+      .dark [class*="border-amber-200"],
+      .dark [class*="border-red-200"],
+      .dark [class~="border"] {
+        border-color: #334155 !important;
+      }
+
+      .dark input,
+      .dark select,
+      .dark textarea {
+        background-color: #0f172a !important;
+        border-color: #334155 !important;
+        color: #f8fafc !important;
+      }
+
+      .dark option {
+        background-color: #0f172a;
+        color: #f8fafc;
+      }
+
+      .dark input::placeholder,
+      .dark textarea::placeholder {
+        color: #94a3b8;
+      }
+
+      .dark table,
+      .dark tbody,
+      .dark tr,
+      .dark td {
+        color: #e5edf7;
+      }
+
+      .recharts-legend-item-text {
+        color: #334155 !important;
+      }
+
+      .dark thead {
+        background-color: #0f2d45 !important;
+        background-image: none !important;
+        color: #f8fafc !important;
+      }
+
+      .dark .recharts-cartesian-axis-tick text,
+      .dark .recharts-legend-item-text {
+        fill: #dbeafe !important;
+        color: #dbeafe !important;
+      }
+
+      .dark .recharts-cartesian-grid line {
+        stroke: #334155;
+      }
+
+      .dark .recharts-tooltip-wrapper .recharts-default-tooltip {
+        background-color: #0f172a !important;
+        border-color: #334155 !important;
+        color: #f8fafc !important;
+      }
+
+      .dark .school-logo {
+        background: #ffffff !important;
+        border-color: #ffffff !important;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
