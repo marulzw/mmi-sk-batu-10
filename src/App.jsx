@@ -517,9 +517,15 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
   const laporanBulanan = useMemo(() => {
     const group = {};
+    const now = new Date();
+    const bulanSemasaIndex = now.getFullYear() * 12 + now.getMonth() + 1;
 
     rekod.forEach((item) => {
       const bulan = getMonthYear(item.tarikh);
+      const [bulanNombor, tahunNombor] = bulan.split("/").map(Number);
+      const bulanIndex = tahunNombor * 12 + bulanNombor;
+      if (bulan === "Tidak dikenal pasti" || !Number.isFinite(bulanIndex) || bulanIndex > bulanSemasaIndex) return;
+
       if (!group[bulan]) {
         group[bulan] = {
           bulan,
@@ -600,6 +606,12 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       .slice()
       .reverse()
       .map((bulan) => ({ bulan: bulan.bulan, Jumlah: bulan.jumlah, GMP: bulan.guruMP, SitIn: bulan.sitIn }));
+  }, [laporanBulanan]);
+
+  const laporanBulanSemasa = useMemo(() => {
+    const now = new Date();
+    const bulanSemasa = `${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+    return laporanBulanan.filter((bulan) => bulan.bulan === bulanSemasa);
   }, [laporanBulanan]);
 
   const topSitInKelasData = useMemo(() => {
@@ -1882,11 +1894,11 @@ useEffect(() => {
               </div>
             )}
 
-            {laporanBulanan.length === 0 && senaraiLaporan.length === 0 ? (
-              <div className="rounded-2xl bg-slate-100 p-4 text-slate-600">Belum ada data laporan bulanan.</div>
+            {laporanBulanSemasa.length === 0 ? (
+              <div className="rounded-2xl bg-slate-100 p-4 text-slate-600">Belum ada data rekod bulan semasa.</div>
             ) : (
               <div className="space-y-4">
-                {laporanBulanan.map((bulan) => (
+                {laporanBulanSemasa.map((bulan) => (
                   <div key={bulan.bulan} className="rounded-3xl border border-slate-200 p-4">
                     <h3 className="text-lg font-black text-slate-950">Bulan {bulan.bulan}</h3>
 
@@ -1895,41 +1907,11 @@ useEffect(() => {
                         Jumlah Rekod: <strong>{bulan.jumlah}</strong>
                       </div>
                       <div className="rounded-2xl bg-emerald-100 p-4">
-                        Peratus Guru Masuk: <strong>{bulan.peratusGuruMasuk}%</strong>
+                        Peratus Guru Sudah Merekod: <strong>{bulan.peratusGuruMasuk}%</strong>
                       </div>
                       <div className="rounded-2xl bg-red-100 p-4">
-                        Peratus Guru Tidak Masuk: <strong>{bulan.peratusGuruTidakMasuk}%</strong>
+                        Peratus Guru Belum Merekod: <strong>{bulan.peratusGuruTidakMasuk}%</strong>
                       </div>
-                      <div className="rounded-2xl border p-4">
-                        {bulan.kelasPalingKosong ? (
-                          <>
-                            Kelas Tiada Rekod MMI Tertinggi:<br />
-                            <strong>{bulan.kelasPalingKosong[0]}</strong>
-                          </>
-                        ) : (
-                          <>
-                            Jumlah kelas tiada rekod:<br />
-                            <strong>{bulan.jumlahKelasTiadaRekod || 0} kelas</strong>
-                          </>
-                        )}
-                      </div>
-                      <div className="rounded-2xl border p-4">
-                        Kelas Paling Banyak Sit-in:<br />
-                        <strong>{bulan.kelasPalingSitIn?.[0] || "Tiada data"}</strong>
-                      </div>
-                      <div className="rounded-2xl border p-4">
-                        Guru Paling Kerap Sit-in:<br />
-                        <strong>{bulan.guruPalingSitIn?.[0] || "Tiada data"}</strong>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                      {Object.entries(bulan.kelas).map(([kelas, jumlah]) => (
-                        <div key={kelas} className="flex justify-between rounded-xl border px-3 py-2 text-sm">
-                          <span>{kelas}</span>
-                          <strong>{jumlah}</strong>
-                        </div>
-                      ))}
                     </div>
                   </div>
                 ))}
