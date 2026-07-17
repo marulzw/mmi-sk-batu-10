@@ -48,6 +48,19 @@ function dapatkanStoragePathDaripadaUrl(pdfUrl) {
   }
 }
 
+function normalisasiStoragePath(storagePath, bucketName) {
+  if (!storagePath) return "";
+
+  let pathBersih = decodeURIComponent(String(storagePath)).replace(/^\/+/, "");
+  const bucketPrefix = `${bucketName}/`;
+
+  if (pathBersih.startsWith(bucketPrefix)) {
+    pathBersih = pathBersih.slice(bucketPrefix.length);
+  }
+
+  return pathBersih;
+}
+
 async function dapatkanUrlDownloadStabil(file, destination) {
   const [exists] = await file.exists();
   if (!exists) {
@@ -953,8 +966,10 @@ exports.refreshLaporanPdfUrl = onRequest(
       }
 
       const laporan = laporanSnap.data() || {};
-      const storagePath =
+      const bucket = admin.storage().bucket();
+      const storagePathAsal =
         laporan.storagePath || dapatkanStoragePathDaripadaUrl(laporan.pdfUrl);
+      const storagePath = normalisasiStoragePath(storagePathAsal, bucket.name);
 
       if (!storagePath) {
         res.status(400).json({
@@ -966,7 +981,7 @@ exports.refreshLaporanPdfUrl = onRequest(
         return;
       }
 
-      const file = admin.storage().bucket().file(storagePath);
+      const file = bucket.file(storagePath);
       const pdfUrl = await dapatkanUrlDownloadStabil(file, storagePath);
 
       await laporanRef.update({
