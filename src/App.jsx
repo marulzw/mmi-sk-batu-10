@@ -5,7 +5,6 @@ import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, collection, addDoc, deleteDoc, doc, updateDoc, onSnapshot, orderBy, query, serverTimestamp } from "firebase/firestore";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from "recharts";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
 const firebaseConfig = {
@@ -20,7 +19,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
-const storage = getStorage(app);
 
 const masaList = [
   "7:15 - 7:45", "7:45 - 8:15", "8:15 - 8:45", "8:45 - 9:15",
@@ -1246,12 +1244,31 @@ async function janaLaporanBulananManual() {
 async function janaPDFLaporanDemo(laporan, autoMode = false) {
   try {
 
-    if (!laporan?.pdfUrl) {
+    if (!laporan?.pdfUrl && !laporan?.storagePath) {
       alert("PDF laporan belum tersedia");
       return;
     }
 
-    window.location.href = laporan.pdfUrl;
+    setMessage("Sedang menyediakan pautan PDF...");
+
+    let pdfUrl = laporan.pdfUrl;
+
+    if (laporan.firebaseId) {
+      const functions = getFunctions(app, "us-central1");
+      const refreshLaporan = httpsCallable(functions, "refreshLaporanPdfUrl");
+      const result = await refreshLaporan({
+        laporanId: laporan.firebaseId,
+      });
+
+      pdfUrl = result?.data?.pdfUrl || pdfUrl;
+    }
+
+    if (!pdfUrl) {
+      alert("PDF laporan belum tersedia");
+      return;
+    }
+
+    window.location.href = pdfUrl;
 
     setMessage(
       autoMode
@@ -1259,7 +1276,8 @@ async function janaPDFLaporanDemo(laporan, autoMode = false) {
         : "PDF laporan berjaya dibuka."
     );
 
-  } catch {
+  } catch (error) {
+    console.error(error);
     setMessage("Gagal membuka PDF laporan.");
   }
 }
@@ -1867,9 +1885,7 @@ useEffect(() => {
             {laporan.pdfUrl ? (
               <button
                 type="button"
-                onClick={() => {
-                  window.open(laporan.pdfUrl, "_self");
-                }}
+                onClick={() => janaPDFLaporanDemo(laporan)}
                 className="rounded-2xl bg-sky-700 px-4 py-2 text-center text-sm font-bold text-white hover:bg-sky-800"
               >
                 Muat Turun PDF

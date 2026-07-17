@@ -5,6 +5,7 @@ const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const crypto = require("crypto");
 const OpenAI = require("openai");
 
 admin.initializeApp();
@@ -23,6 +24,54 @@ function getOpenAI() {
 
 function kiraPeratus(nilai, jumlah) {
   return jumlah > 0 ? ((nilai / jumlah) * 100).toFixed(1) : "0.0";
+}
+
+function binaFirebaseDownloadUrl(bucketName, destination, token) {
+  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(destination)}?alt=media&token=${token}`;
+}
+
+function dapatkanStoragePathDaripadaUrl(pdfUrl) {
+  if (!pdfUrl) return "";
+
+  try {
+    const url = new URL(pdfUrl);
+    const pathname = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+
+    if (url.hostname === "firebasestorage.googleapis.com") {
+      const match = pathname.match(/^v0\/b\/[^/]+\/o\/(.+)$/);
+      return match?.[1] || "";
+    }
+
+    return pathname;
+  } catch {
+    return "";
+  }
+}
+
+async function dapatkanUrlDownloadStabil(file, destination) {
+  const [exists] = await file.exists();
+  if (!exists) {
+    throw new Error(`Fail PDF tidak dijumpai di Storage: ${destination}`);
+  }
+
+  const [metadata] = await file.getMetadata();
+  const tokenSediaAda = metadata?.metadata?.firebaseStorageDownloadTokens
+    ?.split(",")
+    .map((token) => token.trim())
+    .find(Boolean);
+  const token = tokenSediaAda || crypto.randomUUID();
+
+  if (!tokenSediaAda) {
+    await file.setMetadata({
+      metadata: {
+        ...(metadata?.metadata || {}),
+        firebaseStorageDownloadTokens: token,
+      },
+      contentType: metadata?.contentType || "application/pdf",
+    });
+  }
+
+  return binaFirebaseDownloadUrl(file.bucket.name, destination, token);
 }
 
 function dapatkanNamaBulan(bulanInput) {
@@ -779,17 +828,14 @@ async function janaDanSimpanLaporan({ bulan, tahun, manual = false }) {
   });
 
   const file = bucket.file(destination);
-
-  const [pdfUrl] = await file.getSignedUrl({
-    action: "read",
-    expires: "03-01-2500",
-  });
+  const pdfUrl = await dapatkanUrlDownloadStabil(file, destination);
 
   const laporanRef = await admin.firestore().collection("laporan_bulanan").add({
     tajuk: `Laporan Bulan ${bulan}`,
     bulan,
     tahun,
     pdfUrl,
+    storagePath: destination,
     jumlahRekod,
     jumlahGMP,
     jumlahSitIn,
@@ -858,6 +904,91 @@ exports.janaLaporanBulananManual = onRequest(
       res.status(500).json({
         success: false,
         message: "Laporan gagal dijana.",
+      });
+    }
+  }
+);
+
+exports.refreshLaporanPdfUrl = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        res.status(405).json({
+          error: {
+            status: "METHOD_NOT_ALLOWED",
+            message: "Kaedah request tidak dibenarkan.",
+          },
+        });
+        return;
+      }
+
+      const payload = req.body?.data || req.body || {};
+      const laporanId = payload.laporanId;
+
+      if (!laporanId) {
+        res.status(400).json({
+          error: {
+            status: "INVALID_ARGUMENT",
+            message: "ID laporan diperlukan.",
+          },
+        });
+        return;
+      }
+
+      const laporanRef = admin.firestore().collection("laporan_bulanan").doc(laporanId);
+      const laporanSnap = await laporanRef.get();
+
+      if (!laporanSnap.exists) {
+        res.status(404).json({
+          error: {
+            status: "NOT_FOUND",
+            message: "Laporan tidak dijumpai.",
+          },
+        });
+        return;
+      }
+
+      const laporan = laporanSnap.data() || {};
+      const storagePath =
+        laporan.storagePath || dapatkanStoragePathDaripadaUrl(laporan.pdfUrl);
+
+      if (!storagePath) {
+        res.status(400).json({
+          error: {
+            status: "FAILED_PRECONDITION",
+            message: "Laluan fail PDF tidak dapat dikenal pasti.",
+          },
+        });
+        return;
+      }
+
+      const file = admin.storage().bucket().file(storagePath);
+      const pdfUrl = await dapatkanUrlDownloadStabil(file, storagePath);
+
+      await laporanRef.update({
+        pdfUrl,
+        storagePath,
+        pdfUrlUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      res.status(200).json({
+        data: {
+          pdfUrl,
+          storagePath,
+        },
+      });
+    } catch (error) {
+      console.error("Ralat refreshLaporanPdfUrl:", error);
+
+      res.status(500).json({
+        error: {
+          status: "INTERNAL",
+          message: "Gagal menyediakan pautan PDF.",
+        },
       });
     }
   }
