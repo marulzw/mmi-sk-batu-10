@@ -30,13 +30,22 @@ const hariBM = ["Ahad", "Isnin", "Selasa", "Rabu", "Khamis", "Jumaat", "Sabtu"];
 const REKOD_COLLECTION = "rekod_mmi";
 const GURU_COLLECTION = "senarai_guru";
 const KELAS_COLLECTION = "senarai_kelas";
-const JADUAL_COLLECTION = "jadual_waktu";
 // TAMBAH INI
 const LAPORAN_COLLECTION = "laporan_bulanan";
 const SLOT_TIME_MESSAGE = "Waktu PdP yang dipilih belum bermula.";
 const PERHIMPUNAN_LABEL = "Perhimpunan/ Mentor-Mentee/ Nilam";
 const chartColors = ["#0f172a", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#8b5cf6"];
 const mataPelajaranPilihan = ["BM", "BI", "Math", "Sc", "PJ", "PK", "Sej", "RBT", "B. Ib/ B.A", "PI/PM", "PSV", "MZ"];
+
+function sortJadualWaktu(data) {
+  return [...data].sort(
+    (a, b) =>
+      hariBM.indexOf(a.hari) - hariBM.indexOf(b.hari) ||
+      String(a.kelas || "").localeCompare(String(b.kelas || ""), "ms", { numeric: true }) ||
+      masaList.indexOf(a.masa) - masaList.indexOf(b.masa) ||
+      String(a.mataPelajaran || "").localeCompare(String(b.mataPelajaran || ""), "ms", { numeric: true })
+  );
+}
 
 const bulanPilihan = [
   { value: "01", label: "Januari" },
@@ -327,6 +336,23 @@ const themeChartColors = theme === "dark"
     window.localStorage.setItem("mmi-theme", theme);
   }, [theme]);
 
+  async function loadJadualWaktu() {
+    try {
+      const functions = getFunctions(app, "us-central1");
+      const dapatkanJadual = httpsCallable(functions, "dapatkanJadualWaktu");
+      const result = await dapatkanJadual();
+      const data = Array.isArray(result.data?.jadual) ? result.data.jadual : [];
+      setJadualList(sortJadualWaktu(data));
+    } catch (error) {
+      console.error("Ralat mendapatkan jadual waktu:", error);
+      setJadualList([]);
+    }
+  }
+
+  useEffect(() => {
+    loadJadualWaktu();
+  }, []);
+
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentAdmin(user);
@@ -381,30 +407,6 @@ const themeChartColors = theme === "dark"
       () => setKelasList([])
     );
 
-    const unsubscribeJadual = onSnapshot(
-      collection(db, JADUAL_COLLECTION),
-      (snapshot) => {
-        const data = snapshot.docs.map((docItem) => ({
-          firebaseId: docItem.id,
-          ...docItem.data()
-        }));
-
-        setJadualList(
-          data.sort(
-            (a, b) =>
-              hariBM.indexOf(a.hari) - hariBM.indexOf(b.hari) ||
-              String(a.kelas || "").localeCompare(String(b.kelas || ""), "ms", { numeric: true }) ||
-              masaList.indexOf(a.masa) - masaList.indexOf(b.masa) ||
-              String(a.mataPelajaran || "").localeCompare(String(b.mataPelajaran || ""), "ms", { numeric: true })
-          )
-        );
-      },
-      (error) => {
-        console.error("Ralat mendapatkan jadual waktu:", error);
-        setJadualList([]);
-      }
-    );
-
     const unsubscribeLaporan = onSnapshot(
   query(
     collection(db, LAPORAN_COLLECTION),
@@ -425,7 +427,6 @@ const themeChartColors = theme === "dark"
       unsubscribeRekod();
       unsubscribeGuru();
       unsubscribeKelas();
-      unsubscribeJadual();
       unsubscribeLaporan();
     };
   }, []);
@@ -1371,6 +1372,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
         kelas,
         jadual: pilihanJadual,
       });
+      await loadJadualWaktu();
 
       setMessage(`Jadual waktu ${kelas} hari ${hari} berjaya disimpan.`);
       setJadualMessage(`Jadual waktu ${kelas} hari ${hari} berjaya disimpan.`);
@@ -1396,6 +1398,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       await padamJadual({
         jadualId: jadual.firebaseId,
       });
+      await loadJadualWaktu();
 
       setMessage("Jadual waktu telah dipadam.");
       setJadualMessage("Jadual waktu telah dipadam.");

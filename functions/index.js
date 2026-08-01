@@ -1108,6 +1108,52 @@ exports.simpanJadualWaktu = onRequest(
   }
 );
 
+exports.dapatkanJadualWaktu = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        res.status(405).json({
+          error: {
+            status: "METHOD_NOT_ALLOWED",
+            message: "Kaedah request tidak dibenarkan.",
+          },
+        });
+        return;
+      }
+
+      const snapshot = await admin.firestore().collection("jadual_waktu").get();
+      const jadual = snapshot.docs
+        .map((docSnap) => ({
+          firebaseId: docSnap.id,
+          hari: String(docSnap.get("hari") || "").trim(),
+          kelas: String(docSnap.get("kelas") || "").trim(),
+          masa: String(docSnap.get("masa") || "").trim(),
+          mataPelajaran: String(docSnap.get("mataPelajaran") || "").trim(),
+        }))
+        .filter((item) => item.hari && item.kelas && item.masa && item.mataPelajaran);
+
+      res.status(200).json({
+        data: {
+          jadual,
+        },
+      });
+    } catch (error) {
+      console.error("Ralat dapatkanJadualWaktu:", error);
+
+      res.status(500).json({
+        error: {
+          status: "INTERNAL",
+          message: "Gagal mendapatkan jadual waktu.",
+        },
+      });
+    }
+  }
+);
+
 exports.padamJadualWaktu = onRequest(
   {
     region: "us-central1",
