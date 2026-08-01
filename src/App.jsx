@@ -1378,7 +1378,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       console.error("Ralat simpan jadual waktu:", error);
       const mesejRalat =
         error?.code === "permission-denied"
-          ? "Gagal simpan jadual waktu. Semak kebenaran Firestore untuk koleksi jadual_waktu."
+          ? "Gagal simpan jadual waktu. Pastikan anda log masuk sebagai admin."
           : `Gagal simpan jadual waktu${error?.code ? ` (${error.code})` : ""}.`;
       setMessage(mesejRalat);
       setJadualMessage(mesejRalat);
