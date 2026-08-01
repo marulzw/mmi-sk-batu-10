@@ -30,11 +30,13 @@ const hariBM = ["Ahad", "Isnin", "Selasa", "Rabu", "Khamis", "Jumaat", "Sabtu"];
 const REKOD_COLLECTION = "rekod_mmi";
 const GURU_COLLECTION = "senarai_guru";
 const KELAS_COLLECTION = "senarai_kelas";
+const JADUAL_COLLECTION = "jadual_waktu";
 // TAMBAH INI
 const LAPORAN_COLLECTION = "laporan_bulanan";
 const SLOT_TIME_MESSAGE = "Waktu PdP yang dipilih belum bermula.";
 const PERHIMPUNAN_LABEL = "Perhimpunan/ Mentor-Mentee/ Nilam";
 const chartColors = ["#0f172a", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#8b5cf6"];
+const mataPelajaranPilihan = ["BM", "BI", "Math", "Sc", "PJ", "PK", "Sej", "RBT", "B. Ib/ B.A", "PI/PM", "PSV", "MZ"];
 
 const bulanPilihan = [
   { value: "01", label: "Januari" },
@@ -280,14 +282,22 @@ export default function BorangMMIApp() {
   const [search, setSearch] = useState("");
   const [selectedKelas, setSelectedKelas] = useState("");
   const [message, setMessage] = useState("");
+  const [jadualMessage, setJadualMessage] = useState("");
+  const [isSavingJadual, setIsSavingJadual] = useState(false);
   const [slotMessageMasa, setSlotMessageMasa] = useState("");
   const [submitPreview, setSubmitPreview] = useState(null);
   const [minitSemasa, setMinitSemasa] = useState(getMinitSemasa);
   const [activeTab, setActiveTab] = useState("rekod");
   const [guruList, setGuruList] = useState([]);
   const [kelasList, setKelasList] = useState([]);
+  const [jadualList, setJadualList] = useState([]);
   const [newGuru, setNewGuru] = useState("");
   const [newKelas, setNewKelas] = useState("");
+  const [jadualForm, setJadualForm] = useState({
+    hari: "Isnin",
+    kelas: "",
+    mataPelajaranIkutMasa: {}
+  });
   const [firebaseStatus, setFirebaseStatus] = useState("Menyambung ke Firebase...");
   const [isOnlineDb, setIsOnlineDb] = useState(false);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
@@ -371,6 +381,30 @@ const themeChartColors = theme === "dark"
       () => setKelasList([])
     );
 
+    const unsubscribeJadual = onSnapshot(
+      collection(db, JADUAL_COLLECTION),
+      (snapshot) => {
+        const data = snapshot.docs.map((docItem) => ({
+          firebaseId: docItem.id,
+          ...docItem.data()
+        }));
+
+        setJadualList(
+          data.sort(
+            (a, b) =>
+              hariBM.indexOf(a.hari) - hariBM.indexOf(b.hari) ||
+              String(a.kelas || "").localeCompare(String(b.kelas || ""), "ms", { numeric: true }) ||
+              masaList.indexOf(a.masa) - masaList.indexOf(b.masa) ||
+              String(a.mataPelajaran || "").localeCompare(String(b.mataPelajaran || ""), "ms", { numeric: true })
+          )
+        );
+      },
+      (error) => {
+        console.error("Ralat mendapatkan jadual waktu:", error);
+        setJadualList([]);
+      }
+    );
+
     const unsubscribeLaporan = onSnapshot(
   query(
     collection(db, LAPORAN_COLLECTION),
@@ -391,6 +425,7 @@ const themeChartColors = theme === "dark"
       unsubscribeRekod();
       unsubscribeGuru();
       unsubscribeKelas();
+      unsubscribeJadual();
       unsubscribeLaporan();
     };
   }, []);
@@ -633,6 +668,75 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       .map((item) => ({ kelas: item.kelas, SitIn: item.sitIn }));
   }, [analisisKelas]);
 
+  const jadualMasaAdmin = useMemo(
+    () => getMasaPaparanKelas(jadualForm.kelas, jadualForm.hari).filter((masa) => !isSlotTidakBolehPilih(jadualForm.hari, masa)),
+    [jadualForm.kelas, jadualForm.hari]
+  );
+
+  const jadualPaparanAdmin = useMemo(
+    () =>
+      jadualList.filter(
+        (jadual) =>
+          (!jadualForm.kelas || jadual.kelas === jadualForm.kelas) &&
+          jadual.hari === jadualForm.hari
+      ),
+    [jadualForm.hari, jadualForm.kelas, jadualList]
+  );
+
+  useEffect(() => {
+    if (!jadualForm.kelas || !jadualForm.hari) return;
+
+    const mataPelajaranIkutMasa = {};
+
+    jadualList
+      .filter((jadual) => jadual.kelas === jadualForm.kelas && jadual.hari === jadualForm.hari)
+      .forEach((jadual) => {
+        mataPelajaranIkutMasa[jadual.masa] = jadual.mataPelajaran || "";
+      });
+
+    setJadualForm((prev) => ({
+      ...prev,
+      mataPelajaranIkutMasa
+    }));
+  }, [jadualForm.hari, jadualForm.kelas, jadualList]);
+
+  function updateJadualField(field, value) {
+    setJadualForm((prev) => {
+      if (field === "kelas" || field === "hari") {
+        return { ...prev, [field]: value, mataPelajaranIkutMasa: {} };
+      }
+
+      return { ...prev, [field]: value };
+    });
+  }
+
+  function updateJadualMataPelajaran(masa, mataPelajaran) {
+    setJadualForm((prev) => ({
+      ...prev,
+      mataPelajaranIkutMasa: {
+        ...prev.mataPelajaranIkutMasa,
+        [masa]: mataPelajaran
+      }
+    }));
+  }
+
+  function getJadualPadanan({ hari, kelas, masa }) {
+    return jadualList.find(
+      (jadual) =>
+        jadual.hari === hari &&
+        jadual.kelas === kelas &&
+        jadual.masa === masa
+    );
+  }
+
+  function getMataPelajaranRekod(item, masa, hari) {
+    return getJadualPadanan({
+      hari,
+      kelas: item.kelas,
+      masa
+    })?.mataPelajaran || item.mataPelajaran || "-";
+  }
+
   function updateField(field, value) {
     setForm((prev) => {
       if (field === "guru") {
@@ -728,6 +832,17 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
   const selectedClass = submitPreview.kelas;
   const info = getTodayInfo();
+  const mataPelajaranRekod = gabungNilaiUnik(
+    submitPreview.masa.map((masa) => ({
+      mataPelajaran: getJadualPadanan({
+        hari: info.hari,
+        kelas: selectedClass,
+        masa
+      })?.mataPelajaran || ""
+    })),
+    "mataPelajaran",
+    ""
+  );
 
   try {
     await addDoc(collection(db, REKOD_COLLECTION), {
@@ -743,6 +858,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
       jenisGuru: submitPreview.jenisGuru,
       guruYangDiganti: submitPreview.guruYangDiganti,
+      mataPelajaran: mataPelajaranRekod,
 
       createdAt: serverTimestamp()
     });
@@ -833,6 +949,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       ...new Set(
         items.map((item) => [
           String(item.guru || "").trim(),
+          String(item.mataPelajaran || "").trim(),
           String(item.jenisGuru || "").trim(),
           String(item.guruYangDiganti || "").trim()
         ].join("|"))
@@ -863,6 +980,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
           tamat,
           masa: masa.replace(" (REHAT)", ""),
           kelas: kelasNama,
+          mataPelajaran: "-",
           guru: "Waktu Rehat",
           guruYangDiganti: "-",
           jenisGuru: "REHAT",
@@ -878,6 +996,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
           tamat,
           masa,
           kelas: kelasNama,
+          mataPelajaran: "-",
           guru: PERHIMPUNAN_LABEL,
           guruYangDiganti: "-",
           jenisGuru: "-",
@@ -886,17 +1005,23 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       }
 
       if (rekodSlot.length > 0) {
+        const rekodSlotDenganSubjek = rekodSlot.map((item) => ({
+          ...item,
+          mataPelajaran: getMataPelajaranRekod(item, masa, hari)
+        }));
+
         return {
           canMerge: true,
-          signature: binaSignatureRekodSlot(rekodSlot),
+          signature: binaSignatureRekodSlot(rekodSlotDenganSubjek),
           mula,
           tamat,
           masa,
           kelas: kelasNama,
-          guru: gabungNilaiUnik(rekodSlot, "guru"),
-          jenisGuru: gabungNilaiUnik(rekodSlot, "jenisGuru"),
-          guruYangDiganti: gabungNilaiUnik(rekodSlot, "guruYangDiganti"),
-          masaHantar: gabungNilaiUnik(rekodSlot, "masaHantar")
+          mataPelajaran: gabungNilaiUnik(rekodSlotDenganSubjek, "mataPelajaran"),
+          guru: gabungNilaiUnik(rekodSlotDenganSubjek, "guru"),
+          jenisGuru: gabungNilaiUnik(rekodSlotDenganSubjek, "jenisGuru"),
+          guruYangDiganti: gabungNilaiUnik(rekodSlotDenganSubjek, "guruYangDiganti"),
+          masaHantar: gabungNilaiUnik(rekodSlotDenganSubjek, "masaHantar")
         };
       }
 
@@ -907,6 +1032,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
         tamat,
         masa,
         kelas: kelasNama,
+        mataPelajaran: "-",
         guru: "-",
         guruYangDiganti: "-",
         jenisGuru: "-",
@@ -962,8 +1088,8 @@ data = data.filter((item) => item.tarikh === today.tarikh);
   }
 
   function tambahHeaderJadualCompilePDF(docPdf, y) {
-    const columnX = [14, 25, 70, 101, 154, 202, 241];
-    const headers = ["Bil", "Masa", "Kelas", "Guru", "Jenis Guru", "Guru Diganti", "Masa Hantar"];
+    const columnX = [14, 24, 56, 89, 116, 164, 207, 242];
+    const headers = ["Bil", "Masa", "Mata Pelajaran", "Kelas", "Guru", "Jenis Guru", "Guru Diganti", "Masa Hantar"];
 
     docPdf.setFillColor(15, 23, 42);
     docPdf.rect(14, y - 6, 268, 9, "F");
@@ -1069,13 +1195,14 @@ data = data.filter((item) => item.tarikh === today.tarikh);
           docPdf.setFontSize(10);
           docPdf.text("Tiada rekod MMI untuk kelas ini pada tarikh ini.", 14, y + 8);
         } else {
-          const columnX = [14, 25, 70, 101, 154, 202, 241];
-          const columnW = [9, 42, 28, 50, 42, 35, 35];
+          const columnX = [14, 24, 56, 89, 116, 164, 207, 242];
+          const columnW = [8, 30, 31, 25, 46, 40, 32, 36];
 
           rekodSlotHarian.forEach((item, index) => {
             const row = [
               String(index + 1),
               String(item.masa || "-"),
+              String(item.mataPelajaran || "-"),
               String(item.kelas || "-"),
               String(item.guru || "-"),
               String(item.jenisGuru || "-"),
@@ -1210,6 +1337,72 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       setMessage(`Kelas ${kelas.nama} telah dipadam.`);
     } catch {
       setMessage("Gagal padam kelas.");
+    }
+  }
+
+  async function addJadualWaktu() {
+    setJadualMessage("");
+    const hari = jadualForm.hari;
+    const kelas = jadualForm.kelas;
+    const pilihanJadual = jadualMasaAdmin
+      .map((masa) => ({
+        masa,
+        mataPelajaran: String(jadualForm.mataPelajaranIkutMasa[masa] || "").trim()
+      }))
+      .filter((item) => item.mataPelajaran);
+
+    if (!hari || !kelas) {
+      setJadualMessage("Sila pilih kelas dan hari terlebih dahulu.");
+      return;
+    }
+
+    if (pilihanJadual.length === 0) {
+      setJadualMessage("Sila pilih sekurang-kurangnya satu mata pelajaran.");
+      return;
+    }
+
+    try {
+      setIsSavingJadual(true);
+      const functions = getFunctions(app, "us-central1");
+      const simpanJadual = httpsCallable(functions, "simpanJadualWaktu");
+
+      await simpanJadual({
+        hari,
+        kelas,
+        jadual: pilihanJadual,
+      });
+
+      setMessage(`Jadual waktu ${kelas} hari ${hari} berjaya disimpan.`);
+      setJadualMessage(`Jadual waktu ${kelas} hari ${hari} berjaya disimpan.`);
+    } catch (error) {
+      console.error("Ralat simpan jadual waktu:", error);
+      const mesejRalat =
+        error?.code === "permission-denied"
+          ? "Gagal simpan jadual waktu. Semak kebenaran Firestore untuk koleksi jadual_waktu."
+          : `Gagal simpan jadual waktu${error?.code ? ` (${error.code})` : ""}.`;
+      setMessage(mesejRalat);
+      setJadualMessage(mesejRalat);
+    } finally {
+      setIsSavingJadual(false);
+    }
+  }
+
+  async function deleteJadualWaktu(jadual) {
+    try {
+      setJadualMessage("");
+      const functions = getFunctions(app, "us-central1");
+      const padamJadual = httpsCallable(functions, "padamJadualWaktu");
+
+      await padamJadual({
+        jadualId: jadual.firebaseId,
+      });
+
+      setMessage("Jadual waktu telah dipadam.");
+      setJadualMessage("Jadual waktu telah dipadam.");
+    } catch (error) {
+      console.error("Ralat padam jadual waktu:", error);
+      setMessage("Gagal padam jadual waktu.");
+      setJadualMessage("Gagal padam jadual waktu.");
     }
   }
 
@@ -2070,6 +2263,9 @@ useEffect(() => {
                 <button onClick={handleAdminLogout} className="flex h-11 items-center rounded-2xl border px-4 text-sm font-bold"><LogOut className="mr-2 h-4 w-4" /> Log Keluar</button>
               </div>
               <div className="rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800">Admin sedang log masuk sebagai: <strong>{currentAdmin?.email}</strong></div>
+              {message && message !== SLOT_TIME_MESSAGE && (
+                <div className="mt-3 rounded-2xl bg-slate-100 p-3 text-sm font-medium text-slate-700">{message}</div>
+              )}
             </div>
 
             <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-sky-50 to-indigo-50 p-4 shadow-sm md:p-6">
@@ -2101,6 +2297,80 @@ useEffect(() => {
                     <button onClick={() => deleteKelas(kelas)} className="rounded-xl border px-3 py-2 text-sm font-bold text-red-600">Padam</button>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-sky-50 to-indigo-50 p-4 shadow-sm md:p-6">
+              <h3 className="mb-4 text-lg font-black text-slate-950">Pengurusan Jadual Waktu</h3>
+              <div className="grid gap-3 md:grid-cols-2">
+                <select
+                  className="h-14 rounded-2xl border px-4 text-base outline-none focus:ring-4 focus:ring-slate-100"
+                  value={jadualForm.kelas}
+                  onChange={(e) => updateJadualField("kelas", e.target.value)}
+                >
+                  <option value="">Pilih kelas</option>
+                  {kelasList.map((kelas) => (
+                    <option key={kelas.firebaseId} value={kelas.nama}>{kelas.nama}</option>
+                  ))}
+                </select>
+                <select
+                  className="h-14 rounded-2xl border px-4 text-base outline-none focus:ring-4 focus:ring-slate-100"
+                  value={jadualForm.hari}
+                  onChange={(e) => updateJadualField("hari", e.target.value)}
+                >
+                  {hariBM.filter((hari) => !["Sabtu", "Ahad"].includes(hari)).map((hari) => (
+                    <option key={hari} value={hari}>{hari}</option>
+                  ))}
+                </select>
+              </div>
+
+              {jadualForm.kelas ? (
+                <div className="mt-5 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {jadualMasaAdmin.map((masa) => (
+                    <div key={masa} className="grid gap-2 rounded-2xl border p-3 sm:grid-cols-[120px_1fr] sm:items-center">
+                      <div className="font-black text-slate-950">{masa}</div>
+                      <select
+                        className="h-12 rounded-2xl border px-4 text-sm outline-none focus:ring-4 focus:ring-slate-100"
+                        value={jadualForm.mataPelajaranIkutMasa[masa] || ""}
+                        onChange={(e) => updateJadualMataPelajaran(masa, e.target.value)}
+                      >
+                        <option value="">Tiada subjek</option>
+                        {mataPelajaranPilihan.map((mataPelajaran) => (
+                          <option key={mataPelajaran} value={mataPelajaran}>{mataPelajaran}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-5 rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">Pilih kelas untuk memaparkan slot masa jadual.</div>
+              )}
+
+              <button
+                onClick={addJadualWaktu}
+                disabled={isSavingJadual}
+                className="mt-4 h-12 w-full rounded-2xl bg-slate-950 px-5 font-black text-white disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
+              >
+                {isSavingJadual ? "Menyimpan..." : "Simpan Jadual"}
+              </button>
+              {jadualMessage && (
+                <div className="mt-3 rounded-2xl bg-slate-100 p-3 text-sm font-medium text-slate-700">{jadualMessage}</div>
+              )}
+
+              <div className="mt-6 space-y-2">
+                {jadualPaparanAdmin.length === 0 ? (
+                  <div className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">Belum ada jadual waktu didaftarkan.</div>
+                ) : (
+                  jadualPaparanAdmin.map((jadual) => (
+                    <div key={jadual.firebaseId} className="grid gap-3 rounded-2xl border p-3 text-sm md:grid-cols-[90px_1fr_1fr_1fr_auto] md:items-center">
+                      <div className="font-black text-slate-950">{jadual.hari}</div>
+                      <div><span className="text-xs font-bold text-slate-500">Kelas</span><p className="font-bold">{jadual.kelas}</p></div>
+                      <div><span className="text-xs font-bold text-slate-500">Masa</span><p>{jadual.masa}</p></div>
+                      <div><span className="text-xs font-bold text-slate-500">Mata Pelajaran</span><p className="font-bold">{jadual.mataPelajaran}</p></div>
+                      <button onClick={() => deleteJadualWaktu(jadual)} className="rounded-xl border px-3 py-2 text-sm font-bold text-red-600">Padam</button>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>

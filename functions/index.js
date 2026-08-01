@@ -87,6 +87,17 @@ async function dapatkanUrlDownloadStabil(file, destination) {
   return binaFirebaseDownloadUrl(file.bucket.name, destination, token);
 }
 
+async function sahkanAdminRequest(req) {
+  const authHeader = req.headers.authorization || "";
+  const match = authHeader.match(/^Bearer (.+)$/);
+
+  if (!match) {
+    throw new Error("UNAUTHENTICATED");
+  }
+
+  return admin.auth().verifyIdToken(match[1]);
+}
+
 function dapatkanNamaBulan(bulanInput) {
   const nomborBulan = Number(bulanInput);
 
@@ -1003,6 +1014,149 @@ exports.refreshLaporanPdfUrl = onRequest(
         error: {
           status: "INTERNAL",
           message: "Gagal menyediakan pautan PDF.",
+        },
+      });
+    }
+  }
+);
+
+exports.simpanJadualWaktu = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        res.status(405).json({
+          error: {
+            status: "METHOD_NOT_ALLOWED",
+            message: "Kaedah request tidak dibenarkan.",
+          },
+        });
+        return;
+      }
+
+      await sahkanAdminRequest(req);
+
+      const payload = req.body?.data || req.body || {};
+      const hari = String(payload.hari || "").trim();
+      const kelas = String(payload.kelas || "").trim();
+      const jadual = Array.isArray(payload.jadual) ? payload.jadual : [];
+
+      const jadualSah = jadual
+        .map((item) => ({
+          masa: String(item.masa || "").trim(),
+          mataPelajaran: String(item.mataPelajaran || "").trim(),
+        }))
+        .filter((item) => item.masa && item.mataPelajaran);
+
+      if (!hari || !kelas || jadualSah.length === 0) {
+        res.status(400).json({
+          error: {
+            status: "INVALID_ARGUMENT",
+            message: "Kelas, hari dan sekurang-kurangnya satu mata pelajaran diperlukan.",
+          },
+        });
+        return;
+      }
+
+      const dbAdmin = admin.firestore();
+      const jadualRef = dbAdmin.collection("jadual_waktu");
+      const existingSnap = await jadualRef
+        .where("hari", "==", hari)
+        .where("kelas", "==", kelas)
+        .get();
+      const batch = dbAdmin.batch();
+      const now = admin.firestore.FieldValue.serverTimestamp();
+
+      existingSnap.docs.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+
+      jadualSah.forEach((item) => {
+        batch.set(jadualRef.doc(), {
+          hari,
+          kelas,
+          masa: item.masa,
+          mataPelajaran: item.mataPelajaran,
+          createdAt: now,
+        });
+      });
+
+      await batch.commit();
+
+      res.status(200).json({
+        data: {
+          success: true,
+          jumlah: jadualSah.length,
+        },
+      });
+    } catch (error) {
+      console.error("Ralat simpanJadualWaktu:", error);
+
+      const unauthenticated = error?.message === "UNAUTHENTICATED";
+      res.status(unauthenticated ? 401 : 500).json({
+        error: {
+          status: unauthenticated ? "UNAUTHENTICATED" : "INTERNAL",
+          message: unauthenticated
+            ? "Sila log masuk sebagai admin."
+            : "Gagal simpan jadual waktu.",
+        },
+      });
+    }
+  }
+);
+
+exports.padamJadualWaktu = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        res.status(405).json({
+          error: {
+            status: "METHOD_NOT_ALLOWED",
+            message: "Kaedah request tidak dibenarkan.",
+          },
+        });
+        return;
+      }
+
+      await sahkanAdminRequest(req);
+
+      const payload = req.body?.data || req.body || {};
+      const jadualId = String(payload.jadualId || "").trim();
+
+      if (!jadualId) {
+        res.status(400).json({
+          error: {
+            status: "INVALID_ARGUMENT",
+            message: "ID jadual diperlukan.",
+          },
+        });
+        return;
+      }
+
+      await admin.firestore().collection("jadual_waktu").doc(jadualId).delete();
+
+      res.status(200).json({
+        data: {
+          success: true,
+        },
+      });
+    } catch (error) {
+      console.error("Ralat padamJadualWaktu:", error);
+
+      const unauthenticated = error?.message === "UNAUTHENTICATED";
+      res.status(unauthenticated ? 401 : 500).json({
+        error: {
+          status: unauthenticated ? "UNAUTHENTICATED" : "INTERNAL",
+          message: unauthenticated
+            ? "Sila log masuk sebagai admin."
+            : "Gagal padam jadual waktu.",
         },
       });
     }
