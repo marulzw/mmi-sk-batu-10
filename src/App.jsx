@@ -807,6 +807,139 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     );
   }
 
+  function getMasaMulaTamat(masa) {
+    const [mula = "", tamat = ""] = String(masa || "")
+      .replace(" (REHAT)", "")
+      .split(" - ")
+      .map((item) => item.trim());
+
+    return { mula, tamat };
+  }
+
+  function gabungNilaiUnik(items, field, fallback = "-") {
+    const nilai = [
+      ...new Set(
+        items
+          .map((item) => String(item[field] || "").trim())
+          .filter(Boolean)
+      )
+    ];
+
+    return nilai.length > 0 ? nilai.join("\n") : fallback;
+  }
+
+  function binaSignatureRekodSlot(items) {
+    return [
+      ...new Set(
+        items.map((item) => [
+          String(item.guru || "").trim(),
+          String(item.jenisGuru || "").trim(),
+          String(item.guruYangDiganti || "").trim()
+        ].join("|"))
+      )
+    ]
+      .sort((a, b) => a.localeCompare(b, "ms", { numeric: true }))
+      .join("||");
+  }
+
+  function binaRekodSlotHarian({ kelasNama, hari, rekodHarian }) {
+    const rows = getMasaPaparanKelas(kelasNama, hari).map((masa) => {
+      const isRehatRow = masa.includes("REHAT");
+      const isPerhimpunanRow = isPerhimpunanSelasa(hari, masa);
+      const { mula, tamat } = getMasaMulaTamat(masa);
+      const rekodSlot = rekodHarian
+        .filter((item) =>
+          Array.isArray(item.masaArray)
+            ? item.masaArray.includes(masa)
+            : String(item.masa || "").includes(masa)
+        )
+        .sort(sortRekodPDF);
+
+      if (isRehatRow) {
+        return {
+          isRehatRow: true,
+          canMerge: false,
+          mula,
+          tamat,
+          masa: masa.replace(" (REHAT)", ""),
+          kelas: kelasNama,
+          guru: "Waktu Rehat",
+          guruYangDiganti: "-",
+          jenisGuru: "REHAT",
+          masaHantar: "-"
+        };
+      }
+
+      if (isPerhimpunanRow) {
+        return {
+          isPerhimpunanRow: true,
+          canMerge: false,
+          mula,
+          tamat,
+          masa,
+          kelas: kelasNama,
+          guru: PERHIMPUNAN_LABEL,
+          guruYangDiganti: "-",
+          jenisGuru: "-",
+          masaHantar: "-"
+        };
+      }
+
+      if (rekodSlot.length > 0) {
+        return {
+          canMerge: true,
+          signature: binaSignatureRekodSlot(rekodSlot),
+          mula,
+          tamat,
+          masa,
+          kelas: kelasNama,
+          guru: gabungNilaiUnik(rekodSlot, "guru"),
+          jenisGuru: gabungNilaiUnik(rekodSlot, "jenisGuru"),
+          guruYangDiganti: gabungNilaiUnik(rekodSlot, "guruYangDiganti"),
+          masaHantar: gabungNilaiUnik(rekodSlot, "masaHantar")
+        };
+      }
+
+      return {
+        isKosongRow: true,
+        canMerge: false,
+        mula,
+        tamat,
+        masa,
+        kelas: kelasNama,
+        guru: "-",
+        guruYangDiganti: "-",
+        jenisGuru: "-",
+        masaHantar: "-"
+      };
+    });
+
+    return rows.reduce((mergedRows, row) => {
+      const previous = mergedRows[mergedRows.length - 1];
+
+      if (
+        row.canMerge &&
+        previous?.canMerge &&
+        previous.signature === row.signature &&
+        previous.tamat === row.mula
+      ) {
+        previous.tamat = row.tamat;
+        previous.masa = `${previous.mula} - ${row.tamat}`;
+        previous.masaHantar = gabungNilaiUnik(
+          [
+            ...String(previous.masaHantar || "").split("\n").map((masaHantar) => ({ masaHantar })),
+            ...String(row.masaHantar || "").split("\n").map((masaHantar) => ({ masaHantar }))
+          ],
+          "masaHantar"
+        );
+        return mergedRows;
+      }
+
+      mergedRows.push({ ...row });
+      return mergedRows;
+    }, []);
+  }
+
   function tambahHeaderCompilePDF(docPdf, { tarikh, hari, namaBulan, tahun, kelasLabel, sambungan = false }) {
     const pageWidth = docPdf.internal.pageSize.getWidth();
 
@@ -915,56 +1048,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
         const rekodSlotHarian = hariTidakAktif
           ? []
-            : getMasaPaparanKelas(kelasNama, hari).map((masa) => {
-              const isRehatRow = masa.includes("REHAT");
-              const isPerhimpunanRow = isPerhimpunanSelasa(hari, masa);
-              const rekodSlot = rekodHarian.find((item) =>
-                Array.isArray(item.masaArray)
-                  ? item.masaArray.includes(masa)
-                  : String(item.masa || "").includes(masa)
-              );
-
-              if (isRehatRow) {
-                return {
-                  isRehatRow: true,
-                  masa: masa.replace(" (REHAT)", ""),
-                  kelas: kelasNama,
-                  guru: "Waktu Rehat",
-                  guruYangDiganti: "-",
-                  jenisGuru: "REHAT",
-                  masaHantar: "-"
-                };
-              }
-
-              if (isPerhimpunanRow) {
-                return {
-                  isPerhimpunanRow: true,
-                  masa,
-                  kelas: kelasNama,
-                  guru: PERHIMPUNAN_LABEL,
-                  guruYangDiganti: "-",
-                  jenisGuru: "-",
-                  masaHantar: "-"
-                };
-              }
-
-              if (rekodSlot) {
-                return {
-                  ...rekodSlot,
-                  masa
-                };
-              }
-
-              return {
-                isKosongRow: true,
-                masa,
-                kelas: kelasNama,
-                guru: "-",
-                guruYangDiganti: "-",
-                jenisGuru: "-",
-                masaHantar: "-"
-              };
-            });
+          : binaRekodSlotHarian({ kelasNama, hari, rekodHarian });
 
         tambahHeaderCompilePDF(docPdf, {
           tarikh,
@@ -989,7 +1073,28 @@ data = data.filter((item) => item.tarikh === today.tarikh);
           const columnW = [9, 42, 28, 50, 42, 35, 35];
 
           rekodSlotHarian.forEach((item, index) => {
-            if (y > 190) {
+            const row = [
+              String(index + 1),
+              String(item.masa || "-"),
+              String(item.kelas || "-"),
+              String(item.guru || "-"),
+              String(item.jenisGuru || "-"),
+              String(item.guruYangDiganti || "-"),
+              String(item.masaHantar || "-"),
+            ];
+
+            docPdf.setFont("helvetica", item.isRehatRow || item.isPerhimpunanRow ? "bold" : "normal");
+            docPdf.setFontSize(8.2);
+
+            const rowLines = row.map((value, colIndex) =>
+              docPdf.splitTextToSize(value, columnW[colIndex])
+            );
+            const rowHeight = Math.max(
+              9.5,
+              Math.max(...rowLines.map((lines) => lines.length)) * 4 + 4
+            );
+
+            if (y + rowHeight > 198) {
               docPdf.addPage("a4", "landscape");
               jumlahHalaman += 1;
 
@@ -1013,27 +1118,13 @@ data = data.filter((item) => item.tarikh === today.tarikh);
               docPdf.setFillColor(239, 246, 255);
             }
 
-            docPdf.rect(14, y - 5.5, 268, 9.5, "F");
+            docPdf.rect(14, y - 5.5, 268, rowHeight, "F");
 
-            const row = [
-              String(index + 1),
-              String(item.masa || "-"),
-              String(item.kelas || "-"),
-              String(item.guru || "-"),
-              String(item.jenisGuru || "-"),
-              String(item.guruYangDiganti || "-"),
-              String(item.masaHantar || "-"),
-            ];
-
-            docPdf.setFont("helvetica", item.isRehatRow || item.isPerhimpunanRow ? "bold" : "normal");
-            docPdf.setFontSize(8.2);
-
-            row.forEach((value, colIndex) => {
-              const lines = docPdf.splitTextToSize(value, columnW[colIndex]);
-              docPdf.text(lines.slice(0, 2), columnX[colIndex], y);
+            rowLines.forEach((lines, colIndex) => {
+              docPdf.text(lines, columnX[colIndex], y);
             });
 
-            y += 9.5;
+            y += rowHeight;
           });
         }
 
