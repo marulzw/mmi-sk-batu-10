@@ -1033,7 +1033,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
         tamat,
         masa,
         kelas: kelasNama,
-        mataPelajaran: "-",
+        mataPelajaran: getJadualPadanan({ hari, kelas: kelasNama, masa })?.mataPelajaran || "-",
         guru: "-",
         guruYangDiganti: "-",
         jenisGuru: "-",
