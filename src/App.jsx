@@ -830,7 +830,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
   function tambahHeaderJadualCompilePDF(docPdf, y) {
     const columnX = [14, 25, 70, 101, 154, 202, 241];
-    const headers = ["Bil", "Masa", "Kelas", "Guru", "Guru Diganti", "Jenis Guru", "Masa Hantar"];
+    const headers = ["Bil", "Masa", "Kelas", "Guru", "Jenis Guru", "Guru Diganti", "Masa Hantar"];
 
     docPdf.setFillColor(15, 23, 42);
     docPdf.rect(14, y - 6, 268, 9, "F");
@@ -1020,8 +1020,8 @@ data = data.filter((item) => item.tarikh === today.tarikh);
               String(item.masa || "-"),
               String(item.kelas || "-"),
               String(item.guru || "-"),
-              String(item.guruYangDiganti || "-"),
               String(item.jenisGuru || "-"),
+              String(item.guruYangDiganti || "-"),
               String(item.masaHantar || "-"),
             ];
 
