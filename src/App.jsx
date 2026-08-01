@@ -945,6 +945,33 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     return nilai.length > 0 ? nilai.join("\n") : fallback;
   }
 
+  function getMinitMasaHantar(masaHantar) {
+    const text = String(masaHantar || "").trim();
+    if (!text || text === "-") return Number.POSITIVE_INFINITY;
+
+    const match = text.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(PG|PTG)?$/i);
+    if (!match) return Number.POSITIVE_INFINITY;
+
+    let jam = Number(match[1]);
+    const minit = Number(match[2]);
+    const saat = Number(match[3] || 0);
+    const meridiem = String(match[4] || "").toUpperCase();
+
+    if (meridiem === "PTG" && jam < 12) jam += 12;
+    if (meridiem === "PG" && jam === 12) jam = 0;
+
+    return jam * 60 + minit + saat / 60;
+  }
+
+  function getMasaHantarTerawal(items, fallback = "-") {
+    const nilai = items
+      .map((item) => String(item.masaHantar || "").trim())
+      .filter((masaHantar) => masaHantar && masaHantar !== "-")
+      .sort((a, b) => getMinitMasaHantar(a) - getMinitMasaHantar(b));
+
+    return nilai[0] || fallback;
+  }
+
   function binaSignatureRekodSlot(items) {
     return [
       ...new Set(
@@ -1022,7 +1049,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
           guru: gabungNilaiUnik(rekodSlotDenganSubjek, "guru"),
           jenisGuru: gabungNilaiUnik(rekodSlotDenganSubjek, "jenisGuru"),
           guruYangDiganti: gabungNilaiUnik(rekodSlotDenganSubjek, "guruYangDiganti"),
-          masaHantar: gabungNilaiUnik(rekodSlotDenganSubjek, "masaHantar")
+          masaHantar: getMasaHantarTerawal(rekodSlotDenganSubjek)
         };
       }
 
@@ -1052,13 +1079,10 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       ) {
         previous.tamat = row.tamat;
         previous.masa = `${previous.mula} - ${row.tamat}`;
-        previous.masaHantar = gabungNilaiUnik(
-          [
-            ...String(previous.masaHantar || "").split("\n").map((masaHantar) => ({ masaHantar })),
-            ...String(row.masaHantar || "").split("\n").map((masaHantar) => ({ masaHantar }))
-          ],
-          "masaHantar"
-        );
+        previous.masaHantar = getMasaHantarTerawal([
+          { masaHantar: previous.masaHantar },
+          { masaHantar: row.masaHantar }
+        ]);
         return mergedRows;
       }
 
