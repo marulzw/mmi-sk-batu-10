@@ -1985,17 +1985,6 @@ useEffect(() => {
                         <div><p className="text-xs font-semibold text-slate-500">#{index + 1} · {item.tarikh}</p><h3 className="text-lg font-black text-slate-950">{item.kelas}</h3></div>
                         <div className="flex items-center gap-2">
                           <span className={`rounded-full px-3 py-1 text-xs font-bold ${item.jenisGuru === "Guru Sit-in" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{item.jenisGuru}</span>
-                          {bolehPadamRekodSendiri(item) && (
-                            <button
-                              type="button"
-                              onClick={() => deleteRekodSendiri(item)}
-                              className="flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 shadow-sm transition hover:bg-red-50"
-                              title="Padam rekod ini"
-                              aria-label="Padam rekod ini"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
                         </div>
                       </div>
                       <div className="grid gap-2 text-sm text-slate-700">
@@ -2006,6 +1995,16 @@ useEffect(() => {
                         <div><strong>Masa:</strong> {item.masa}</div>
                         <div><strong>Hantar:</strong> {item.hari}, {item.masaHantar}</div>
                       </div>
+                      {bolehPadamRekodSendiri(item) && (
+                        <button
+                          type="button"
+                          onClick={() => deleteRekodSendiri(item)}
+                          className="mt-4 flex h-11 w-full items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-black text-red-700 transition hover:bg-red-100"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Padam rekod ini
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
