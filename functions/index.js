@@ -61,6 +61,19 @@ function normalisasiStoragePath(storagePath, bucketName) {
   return pathBersih;
 }
 
+function hashTokenPadamRekod(token) {
+  return crypto.createHash("sha256").update(String(token || "")).digest("hex");
+}
+
+function dapatkanTarikhMalaysia() {
+  return new Intl.DateTimeFormat("ms-MY", {
+    timeZone: "Asia/Kuala_Lumpur",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date());
+}
+
 async function dapatkanUrlDownloadStabil(file, destination) {
   const [exists] = await file.exists();
   if (!exists) {
@@ -1148,6 +1161,96 @@ exports.dapatkanJadualWaktu = onRequest(
         error: {
           status: "INTERNAL",
           message: "Gagal mendapatkan jadual waktu.",
+        },
+      });
+    }
+  }
+);
+
+exports.padamRekodSendiri = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        res.status(405).json({
+          error: {
+            status: "METHOD_NOT_ALLOWED",
+            message: "Kaedah request tidak dibenarkan.",
+          },
+        });
+        return;
+      }
+
+      const payload = req.body?.data || req.body || {};
+      const rekodId = String(payload.rekodId || "").trim();
+      const tokenPadam = String(payload.tokenPadam || "").trim();
+
+      if (!rekodId || !tokenPadam) {
+        res.status(400).json({
+          error: {
+            status: "INVALID_ARGUMENT",
+            message: "ID rekod dan token padam diperlukan.",
+          },
+        });
+        return;
+      }
+
+      const rekodRef = admin.firestore().collection("rekod_mmi").doc(rekodId);
+      const rekodSnap = await rekodRef.get();
+
+      if (!rekodSnap.exists) {
+        res.status(404).json({
+          error: {
+            status: "NOT_FOUND",
+            message: "Rekod tidak dijumpai.",
+          },
+        });
+        return;
+      }
+
+      const rekod = rekodSnap.data() || {};
+      const hashTersimpan = String(rekod.tokenPadamHash || "");
+      const hashDiberi = hashTokenPadamRekod(tokenPadam);
+      const tarikhRekod = String(rekod.tarikh || "");
+      const tarikhHariIni = dapatkanTarikhMalaysia();
+
+      if (tarikhRekod !== tarikhHariIni) {
+        res.status(403).json({
+          error: {
+            status: "PERMISSION_DENIED",
+            message: "Rekod hanya boleh dipadam pada hari yang sama.",
+          },
+        });
+        return;
+      }
+
+      if (!hashTersimpan || hashTersimpan !== hashDiberi) {
+        res.status(403).json({
+          error: {
+            status: "PERMISSION_DENIED",
+            message: "Rekod ini hanya boleh dipadam dari peranti yang menghantar rekod tersebut.",
+          },
+        });
+        return;
+      }
+
+      await rekodRef.delete();
+
+      res.status(200).json({
+        data: {
+          success: true,
+        },
+      });
+    } catch (error) {
+      console.error("Ralat padamRekodSendiri:", error);
+
+      res.status(500).json({
+        error: {
+          status: "INTERNAL",
+          message: "Gagal padam rekod.",
         },
       });
     }

@@ -34,8 +34,39 @@ const KELAS_COLLECTION = "senarai_kelas";
 const LAPORAN_COLLECTION = "laporan_bulanan";
 const SLOT_TIME_MESSAGE = "Waktu PdP yang dipilih belum bermula.";
 const PERHIMPUNAN_LABEL = "Perhimpunan/ Mentor-Mentee/ Nilam";
+const REKOD_MILIK_STORAGE_KEY = "mmi-rekod-milik-v1";
 const chartColors = ["#0f172a", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#8b5cf6"];
 const mataPelajaranPilihan = ["BM", "BI", "Math", "Sc", "PJ", "PK", "Sej", "RBT", "B. Ib/ B.A", "PI/PM", "PSV", "MZ"];
+
+function loadRekodMilikStorage() {
+  if (typeof window === "undefined") return {};
+
+  try {
+    return JSON.parse(window.localStorage.getItem(REKOD_MILIK_STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function simpanRekodMilikStorage(data) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(REKOD_MILIK_STORAGE_KEY, JSON.stringify(data));
+}
+
+function janaTokenPadamRekod() {
+  const cryptoObj = window.crypto || window.msCrypto;
+  if (cryptoObj?.randomUUID) return cryptoObj.randomUUID();
+
+  const bytes = new Uint8Array(16);
+  cryptoObj?.getRandomValues?.(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function hashTokenPadamRekod(token) {
+  const encoder = new TextEncoder();
+  const digest = await window.crypto.subtle.digest("SHA-256", encoder.encode(token));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 function sortJadualWaktu(data) {
   return [...data].sort(
@@ -295,6 +326,7 @@ export default function BorangMMIApp() {
   const [isSavingJadual, setIsSavingJadual] = useState(false);
   const [slotMessageMasa, setSlotMessageMasa] = useState("");
   const [submitPreview, setSubmitPreview] = useState(null);
+  const [rekodMilikPeranti, setRekodMilikPeranti] = useState(loadRekodMilikStorage);
   const [minitSemasa, setMinitSemasa] = useState(getMinitSemasa);
   const [activeTab, setActiveTab] = useState("rekod");
   const [guruList, setGuruList] = useState([]);
@@ -846,7 +878,9 @@ data = data.filter((item) => item.tarikh === today.tarikh);
   );
 
   try {
-    await addDoc(collection(db, REKOD_COLLECTION), {
+    const tokenPadam = janaTokenPadamRekod();
+    const tokenPadamHash = await hashTokenPadamRekod(tokenPadam);
+    const docRef = await addDoc(collection(db, REKOD_COLLECTION), {
       tarikh: info.tarikh,
       hari: info.hari,
       masaHantar: info.masaHantar,
@@ -860,8 +894,21 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       jenisGuru: submitPreview.jenisGuru,
       guruYangDiganti: submitPreview.guruYangDiganti,
       mataPelajaran: mataPelajaranRekod,
+      tokenPadamHash,
 
       createdAt: serverTimestamp()
+    });
+
+    setRekodMilikPeranti((prev) => {
+      const next = {
+        ...prev,
+        [docRef.id]: {
+          tokenPadam,
+          tarikh: info.tarikh
+        }
+      };
+      simpanRekodMilikStorage(next);
+      return next;
     });
 
     // Kekalkan dashboard pada kelas yang dipilih
@@ -1310,6 +1357,43 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       setMessage("Semua rekod telah dipadam.");
     } catch {
       setMessage("Gagal memadam rekod.");
+    }
+  }
+
+  function bolehPadamRekodSendiri(item) {
+    return Boolean(
+      item?.firebaseId &&
+      item.tarikh === today.tarikh &&
+      rekodMilikPeranti[item.firebaseId]?.tokenPadam
+    );
+  }
+
+  async function deleteRekodSendiri(item) {
+    if (!bolehPadamRekodSendiri(item)) return;
+
+    const confirmDelete = window.confirm(
+      `Padam rekod ${item.kelas} (${item.masa})?\n\nTindakan ini hanya untuk rekod yang dihantar dari peranti ini dan tidak boleh dibatalkan.`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      const functions = getFunctions(app, "us-central1");
+      const padamRekod = httpsCallable(functions, "padamRekodSendiri");
+      await padamRekod({
+        rekodId: item.firebaseId,
+        tokenPadam: rekodMilikPeranti[item.firebaseId].tokenPadam
+      });
+
+      setRekodMilikPeranti((prev) => {
+        const next = { ...prev };
+        delete next[item.firebaseId];
+        simpanRekodMilikStorage(next);
+        return next;
+      });
+      setMessage("Rekod berjaya dipadam.");
+    } catch (error) {
+      console.error("Ralat padam rekod sendiri:", error);
+      setMessage("Gagal padam rekod. Rekod ini hanya boleh dipadam dari peranti yang menghantar rekod tersebut.");
     }
   }
 
@@ -1897,7 +1981,23 @@ useEffect(() => {
                 <div className="space-y-3 md:hidden">
                   {filteredRekod.length === 0 ? <div className="rounded-2xl bg-slate-100 p-5 text-center text-sm text-slate-500">Belum ada rekod.</div> : filteredRekod.map((item, index) => (
                     <div key={item.firebaseId} className={`rounded-3xl border border-slate-200 p-4 shadow-sm ${index % 2 === 0 ? "bg-white" : "bg-[#EEF4FF]"}`}>
-                      <div className="mb-3 flex items-start justify-between gap-3"><div><p className="text-xs font-semibold text-slate-500">#{index + 1} · {item.tarikh}</p><h3 className="text-lg font-black text-slate-950">{item.kelas}</h3></div><span className={`rounded-full px-3 py-1 text-xs font-bold ${item.jenisGuru === "Guru Sit-in" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{item.jenisGuru}</span></div>
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div><p className="text-xs font-semibold text-slate-500">#{index + 1} · {item.tarikh}</p><h3 className="text-lg font-black text-slate-950">{item.kelas}</h3></div>
+                        <div className="flex items-center gap-2">
+                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${item.jenisGuru === "Guru Sit-in" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{item.jenisGuru}</span>
+                          {bolehPadamRekodSendiri(item) && (
+                            <button
+                              type="button"
+                              onClick={() => deleteRekodSendiri(item)}
+                              className="flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 shadow-sm transition hover:bg-red-50"
+                              title="Padam rekod ini"
+                              aria-label="Padam rekod ini"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
                       <div className="grid gap-2 text-sm text-slate-700">
                         <div><strong>Guru:</strong> {item.guru}</div>
                         {item.jenisGuru === "Guru Sit-in" && item.guruYangDiganti && (
@@ -1912,8 +2012,8 @@ useEffect(() => {
 
                 <div className="hidden overflow-x-auto rounded-2xl border md:block">
                   <table className="w-full min-w-[850px] text-sm">
-                    <thead className="bg-gradient-to-r from-sky-100 to-indigo-100 text-slate-800"><tr><th className="p-3 text-left">Bil</th><th className="p-3 text-left">Tarikh</th><th className="p-3 text-left">Hari</th><th className="p-3 text-left">Masa Hantar</th><th className="p-3 text-left">Kelas</th><th className="p-3 text-left">Guru</th><th className="p-3 text-left">Guru Diganti</th><th className="p-3 text-left">Masa</th><th className="p-3 text-left">Jenis</th></tr></thead>
-                    <tbody>{filteredRekod.length === 0 ? <tr><td colSpan="9" className="p-6 text-center text-slate-500">Belum ada rekod.</td></tr> : filteredRekod.map((item, index) => <tr key={item.firebaseId} className={`border-t transition hover:bg-sky-100 ${index % 2 === 0 ? "bg-white" : "bg-[#EEF4FF]"}`}><td className="p-3">{index + 1}</td><td className="p-3">{item.tarikh}</td><td className="p-3">{item.hari}</td><td className="p-3">{item.masaHantar}</td><td className="p-3 font-bold">{item.kelas}</td><td className="p-3">{item.guru}</td><td className="p-3">{item.guruYangDiganti || "-"}</td><td className="p-3">{item.masa}</td><td className="p-3">{item.jenisGuru}</td></tr>)}</tbody>
+                    <thead className="bg-gradient-to-r from-sky-100 to-indigo-100 text-slate-800"><tr><th className="p-3 text-left">Bil</th><th className="p-3 text-left">Tarikh</th><th className="p-3 text-left">Hari</th><th className="p-3 text-left">Masa Hantar</th><th className="p-3 text-left">Kelas</th><th className="p-3 text-left">Guru</th><th className="p-3 text-left">Guru Diganti</th><th className="p-3 text-left">Masa</th><th className="p-3 text-left">Jenis</th><th className="p-3 text-left">Tindakan</th></tr></thead>
+                    <tbody>{filteredRekod.length === 0 ? <tr><td colSpan="10" className="p-6 text-center text-slate-500">Belum ada rekod.</td></tr> : filteredRekod.map((item, index) => <tr key={item.firebaseId} className={`border-t transition hover:bg-sky-100 ${index % 2 === 0 ? "bg-white" : "bg-[#EEF4FF]"}`}><td className="p-3">{index + 1}</td><td className="p-3">{item.tarikh}</td><td className="p-3">{item.hari}</td><td className="p-3">{item.masaHantar}</td><td className="p-3 font-bold">{item.kelas}</td><td className="p-3">{item.guru}</td><td className="p-3">{item.guruYangDiganti || "-"}</td><td className="p-3">{item.masa}</td><td className="p-3">{item.jenisGuru}</td><td className="p-3">{bolehPadamRekodSendiri(item) ? <button type="button" onClick={() => deleteRekodSendiri(item)} className="flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 transition hover:bg-red-50" title="Padam rekod ini" aria-label="Padam rekod ini"><Trash2 className="h-4 w-4" /></button> : <span className="text-slate-400">-</span>}</td></tr>)}</tbody>
                   </table>
                 </div>
               </div>
