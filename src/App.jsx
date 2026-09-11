@@ -1814,21 +1814,21 @@ useEffect(() => {
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700">Nama Kelas</label>
-                  <select className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-100" value={form.kelas} onChange={(e) => updateField("kelas", e.target.value)}>
-                    <option value="">Pilih kelas</option>
-                    {kelasList.map((kelas) => <option key={kelas.firebaseId} value={kelas.nama}>{kelas.nama}</option>)}
-                  </select>
-                  {kelasList.length === 0 && <p className="text-xs text-amber-700">Senarai kelas belum ditambah. Sila tambah kelas melalui menu Admin.</p>}
-                </div>
-
-                <div className="space-y-2">
                   <label className="text-sm font-bold text-slate-700">Nama Guru</label>
                   <select className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-100" value={form.guru} onChange={(e) => updateField("guru", e.target.value)}>
                     <option value="">Pilih guru</option>
                     {guruList.map((guru) => <option key={guru.firebaseId} value={guru.nama}>{guru.nama}</option>)}
                   </select>
                   {guruList.length === 0 && <p className="text-xs text-amber-700">Senarai guru belum ditambah. Sila tambah guru melalui menu Admin.</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">Nama Kelas</label>
+                  <select className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-100" value={form.kelas} onChange={(e) => updateField("kelas", e.target.value)}>
+                    <option value="">Pilih kelas</option>
+                    {kelasList.map((kelas) => <option key={kelas.firebaseId} value={kelas.nama}>{kelas.nama}</option>)}
+                  </select>
+                  {kelasList.length === 0 && <p className="text-xs text-amber-700">Senarai kelas belum ditambah. Sila tambah kelas melalui menu Admin.</p>}
                 </div>
 
                 <div className="space-y-2">
