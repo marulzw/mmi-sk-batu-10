@@ -35,6 +35,7 @@ const LAPORAN_COLLECTION = "laporan_bulanan";
 const SLOT_TIME_MESSAGE = "Waktu PdP yang dipilih belum bermula.";
 const PERHIMPUNAN_LABEL = "Perhimpunan/ Mentor-Mentee/ Nilam";
 const REKOD_MILIK_STORAGE_KEY = "mmi-rekod-milik-v1";
+const GURU_PEMILIK_STORAGE_KEY = "mmi-guru-pemilik-v1";
 const chartColors = ["#0f172a", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#8b5cf6"];
 const mataPelajaranPilihan = ["BM", "BI", "Math", "Sc", "PJ", "PK", "Sej", "RBT", "B. Ib/ B.A", "PI/PM", "PSV", "MZ"];
 
@@ -51,6 +52,22 @@ function loadRekodMilikStorage() {
 function simpanRekodMilikStorage(data) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(REKOD_MILIK_STORAGE_KEY, JSON.stringify(data));
+}
+
+function loadGuruPemilikTelefon() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(GURU_PEMILIK_STORAGE_KEY) || "";
+}
+
+function simpanGuruPemilikTelefon(namaGuru) {
+  if (typeof window === "undefined") return;
+
+  const nama = String(namaGuru || "").trim();
+  if (nama) {
+    window.localStorage.setItem(GURU_PEMILIK_STORAGE_KEY, nama);
+  } else {
+    window.localStorage.removeItem(GURU_PEMILIK_STORAGE_KEY);
+  }
 }
 
 function janaTokenPadamRekod() {
@@ -313,7 +330,7 @@ function kiraKehadiranWaktuKelas(kelas, hari, tarikh, rekod) {
 export default function BorangMMIApp() {
   const [form, setForm] = useState({
     kelas: "",
-    guru: "",
+    guru: loadGuruPemilikTelefon(),
     masa: [],
     jenisGuru: "Guru Mata Pelajaran",
     guruYangDiganti: ""
@@ -771,6 +788,8 @@ data = data.filter((item) => item.tarikh === today.tarikh);
   }
 
   function updateField(field, value) {
+    if (field === "guru") simpanGuruPemilikTelefon(value);
+
     setForm((prev) => {
       if (field === "guru") {
         return {
@@ -917,7 +936,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     // Reset form tetapi kekalkan kelas
     setForm({
       kelas: selectedClass,
-      guru: "",
+      guru: submitPreview.guru,
       masa: [],
       jenisGuru: "Guru Mata Pelajaran",
       guruYangDiganti: ""
