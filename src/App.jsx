@@ -6,6 +6,7 @@ import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from
 import { getFirestore, collection, addDoc, deleteDoc, doc, updateDoc, onSnapshot, orderBy, query, serverTimestamp } from "firebase/firestore";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from "recharts";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import DailyMonitoring from "./DailyMonitoring.jsx";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD2PX5F4DdcWTX30H3ECrJsq9znQ5rbfto",
@@ -202,6 +203,15 @@ function getJulatMasa(masa) {
   };
 }
 
+function getMonitoringSlots(kelas, hari) {
+  return getMasaPaparanKelas(kelas, hari).map((masa) => ({
+    masa,
+    ...getJulatMasa(masa),
+    rehat: masa.includes("REHAT"),
+    perhimpunan: isPerhimpunanSelasa(hari, masa)
+  }));
+}
+
 function getIndexMasaSemasa(senaraiMasa, minitSemasa) {
   let indexSemasaAtauLepas = -1;
 
@@ -349,6 +359,7 @@ export default function BorangMMIApp() {
   const [guruList, setGuruList] = useState([]);
   const [kelasList, setKelasList] = useState([]);
   const [jadualList, setJadualList] = useState([]);
+  const [timetableState, setTimetableState] = useState("loading");
   const [newGuru, setNewGuru] = useState("");
   const [newKelas, setNewKelas] = useState("");
   const [jadualForm, setJadualForm] = useState({
@@ -392,15 +403,27 @@ const themeChartColors = theme === "dark"
       const result = await dapatkanJadual();
       const data = Array.isArray(result.data?.jadual) ? result.data.jadual : [];
       setJadualList(sortJadualWaktu(data));
+      setTimetableState("ready");
     } catch (error) {
       console.error("Ralat mendapatkan jadual waktu:", error);
-      setJadualList([]);
+      setTimetableState("error");
     }
   }
 
   useEffect(() => {
     loadJadualWaktu();
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== "pemantauan") return;
+    loadJadualWaktu();
+    const timer = setInterval(loadJadualWaktu, 60000);
+    window.addEventListener("focus", loadJadualWaktu);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", loadJadualWaktu);
+    };
+  }, [activeTab]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -423,10 +446,11 @@ const themeChartColors = theme === "dark"
 
     const unsubscribeRekod = onSnapshot(
       rekodQuery,
+      { includeMetadataChanges: true },
       (snapshot) => {
         setRekod(snapshot.docs.map((docItem) => ({ firebaseId: docItem.id, ...docItem.data() })));
         setFirebaseStatus("Database Firebase aktif");
-        setIsOnlineDb(true);
+        setIsOnlineDb(!snapshot.metadata.fromCache);
       },
       () => {
         setFirebaseStatus("Firebase belum disambung. Semak konfigurasi Firebase.");
@@ -1808,9 +1832,10 @@ useEffect(() => {
         </div>
 
         <div className="sticky top-0 z-20 -mx-3 bg-slate-100/95 px-2 py-2 backdrop-blur sm:mx-0 sm:rounded-3xl sm:border sm:bg-white/90 sm:px-3">
-          <div className="grid w-full grid-cols-4 gap-1.5 sm:flex sm:gap-2">
+          <div className="grid w-full grid-cols-3 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
             <button onClick={() => setActiveTab("rekod")} className={`min-h-12 rounded-2xl px-2 py-2 text-center text-xs font-bold leading-tight transition sm:px-4 sm:py-3 sm:text-sm ${activeTab === "rekod" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>Rekod</button>
             <button onClick={() => setActiveTab("analisis")} className={`min-h-12 rounded-2xl px-2 py-2 text-center text-xs font-bold leading-tight transition sm:px-4 sm:py-3 sm:text-sm ${activeTab === "analisis" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>Analisis</button>
+            <button onClick={() => setActiveTab("pemantauan")} className={`min-h-12 rounded-2xl px-2 py-2 text-center text-xs font-bold leading-tight transition sm:px-4 sm:py-3 sm:text-sm ${activeTab === "pemantauan" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>Pemantauan Harian</button>
             <button onClick={() => setActiveTab("laporan")} className={`min-h-12 rounded-2xl px-2 py-2 text-center text-xs font-bold leading-tight transition sm:px-4 sm:py-3 sm:text-sm ${activeTab === "laporan" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>Laporan Bulanan</button>
             <button onClick={() => setActiveTab("admin")} className={`min-h-12 rounded-2xl px-2 py-2 text-center text-xs font-bold leading-tight transition sm:px-4 sm:py-3 sm:text-sm ${activeTab === "admin" ? "bg-sky-700 text-white shadow" : "border bg-white text-slate-700"}`}>
               {isAdminLoggedIn ? "Admin" : (
@@ -1822,6 +1847,18 @@ useEffect(() => {
             </button>
           </div>
         </div>
+
+        {activeTab === "pemantauan" && <DailyMonitoring
+          classes={kelasNames}
+          records={rekodHariIni}
+          timetable={jadualList}
+          today={today}
+          minute={minitSemasa}
+          getSlots={getMonitoringSlots}
+          online={isOnlineDb}
+          timetableState={timetableState}
+          reloadTimetable={loadJadualWaktu}
+        />}
 
         {activeTab === "rekod" && (
           <div className="grid gap-4 lg:grid-cols-[420px_1fr] lg:gap-6">
