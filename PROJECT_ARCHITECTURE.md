@@ -76,6 +76,27 @@ The app is structured around tabs:
 - `Login/Admin`
   Admin authentication and management of teacher/class lists.
 
+- `Pemantauan Harian`
+  All current-day slots by class, including missing records, scheduled subjects,
+  teacher types and special-activity exemptions.
+
+## Special Activity Exemptions
+
+- Admins register dated activities for multiple classes, for a full day or selected slots.
+- Production stores activities in `aktiviti_khas_harian/{YYYY-MM-DD}` through authenticated
+  callable functions `simpanAktivitiKhas` and `batalAktivitiKhas`.
+- Each date document stores an `activities` array plus `updatedBy` and `updatedAt` audit fields.
+  Transactions prevent overlapping registrations on the same date/class/slot.
+- `dapatkanAktivitiKhas` provides read-only activity data to monitoring clients;
+  clients refresh it every 30 seconds and when their window regains focus.
+- Exempt slots are excluded from required/missing instructional counts. Existing teacher
+  submissions are retained. Recess stays separate from activity exemptions.
+- Daily monitoring, daily analysis, compiled PDFs and server monthly reports include exemptions.
+  Previously generated PDFs are unchanged until regenerated.
+- `functions/activityRules.mjs` contains the shared time-slot and exemption rules.
+- Vite development mode uses isolated browser storage for activity previews and does not
+  migrate preview activities to production. Production management requires an admin login.
+
 ## Core Data Collections
 
 ### `rekod_mmi`

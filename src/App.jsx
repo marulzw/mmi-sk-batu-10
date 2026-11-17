@@ -7,6 +7,11 @@ import { getFirestore, collection, addDoc, deleteDoc, doc, updateDoc, onSnapshot
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from "recharts";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import DailyMonitoring from "./DailyMonitoring.jsx";
+import SpecialActivitiesAdmin from "./SpecialActivitiesAdmin.jsx";
+import { ACTIVITY_STORAGE_KEY, getSlotActivity, readLocalActivities } from "./specialActivities.js";
+import { getActivitySlots, getMasaPaparanKelas, getWaktuWajibKelas, periodTimes as masaList } from "../functions/activityRules.mjs";
+
+const LOCAL_ACTIVITY_PREVIEW = import.meta.env.DEV;
 
 const firebaseConfig = {
   apiKey: "AIzaSyD2PX5F4DdcWTX30H3ECrJsq9znQ5rbfto",
@@ -20,12 +25,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
-
-const masaList = [
-  "7:15 - 7:45", "7:45 - 8:15", "8:15 - 8:45", "8:45 - 9:15",
-  "9:15 - 9:45", "9:45 - 10:15", "10:15 - 10:35 (REHAT)",
-  "10:35 - 11:05", "11:05 - 11:35", "11:35 - 12:05", "12:05 - 12:35", "12:35 - 13:05"
-];
 
 const hariBM = ["Ahad", "Isnin", "Selasa", "Rabu", "Khamis", "Jumaat", "Sabtu"];
 const REKOD_COLLECTION = "rekod_mmi";
@@ -122,53 +121,6 @@ function getTodayInfo() {
 function csvEscape(value) {
   const text = String(value ?? "");
   return `"${text.replace(/"/g, '""')}"`;
-}
-
-function getTahunKelas(namaKelas) {
-  const match = String(namaKelas || "").match(/\d+/);
-  return match ? Number(match[0]) : null;
-}
-
-function getWaktuAkhirPdP(kelas, hari) {
-  const tahun = getTahunKelas(kelas);
-
-  if ([1, 2, 3].includes(tahun)) {
-    if (["Isnin", "Selasa", "Rabu"].includes(hari)) return "12:05 - 12:35";
-    if (hari === "Khamis") return "11:35 - 12:05";
-    if (hari === "Jumaat") return "11:05 - 11:35";
-  }
-
-  if ([4, 5, 6].includes(tahun)) {
-    if (["Isnin", "Selasa"].includes(hari)) return "12:35 - 13:05";
-    if (["Rabu", "Khamis"].includes(hari)) return "12:05 - 12:35";
-    if (hari === "Jumaat") return "11:05 - 11:35";
-  }
-
-  return "12:35 - 13:05";
-}
-
-function getWaktuWajibKelas(kelas, hari) {
-  const waktuAkhir = getWaktuAkhirPdP(kelas, hari);
-  const indexAkhir = masaList.indexOf(waktuAkhir);
-
-  if (indexAkhir < 0) {
-    return masaList.filter((masa) => !masa.includes("REHAT"));
-  }
-
-  return masaList
-    .slice(0, indexAkhir + 1)
-    .filter((masa) => !masa.includes("REHAT"));
-}
-
-function getMasaPaparanKelas(kelas, hari) {
-  if (!kelas) return masaList;
-
-  const waktuAkhir = getWaktuAkhirPdP(kelas, hari);
-  const indexAkhir = masaList.indexOf(waktuAkhir);
-
-  if (indexAkhir < 0) return masaList;
-
-  return masaList.slice(0, indexAkhir + 1);
 }
 
 function isPerhimpunanSelasa(hari, masa) {
@@ -297,8 +249,9 @@ function susunMasaBerturutan(senaraiMasa, masaDipilih, indexMasaSemasa = senarai
   return hasil;
 }
 
-function kiraKehadiranWaktuKelas(kelas, hari, tarikh, rekod) {
-  const waktuWajib = getWaktuWajibKelas(kelas, hari);
+function kiraKehadiranWaktuKelas(kelas, hari, tarikh, rekod, activities = []) {
+  const semuaWaktu = getWaktuWajibKelas(kelas, hari);
+  const waktuWajib = semuaWaktu.filter((masa) => !getSlotActivity(activities, tarikh, kelas, masa));
   const jumlahWaktu = waktuWajib.length;
 
   const waktuDaftar = waktuWajib.reduce((jumlah, waktu) => {
@@ -326,6 +279,7 @@ function kiraKehadiranWaktuKelas(kelas, hari, tarikh, rekod) {
   });
 
   return {
+    waktuDikecualikan: semuaWaktu.length - waktuWajib.length,
     jumlahWaktu,
     waktuDaftar,
     waktuTidakDaftar,
@@ -359,6 +313,8 @@ export default function BorangMMIApp() {
   const [guruList, setGuruList] = useState([]);
   const [kelasList, setKelasList] = useState([]);
   const [jadualList, setJadualList] = useState([]);
+  const [specialActivities, setSpecialActivities] = useState(() => LOCAL_ACTIVITY_PREVIEW ? readLocalActivities(window.localStorage) : []);
+  const [activitiesState, setActivitiesState] = useState(LOCAL_ACTIVITY_PREVIEW ? "ready" : "loading");
   const [timetableState, setTimetableState] = useState("loading");
   const [newGuru, setNewGuru] = useState("");
   const [newKelas, setNewKelas] = useState("");
@@ -412,6 +368,30 @@ const themeChartColors = theme === "dark"
 
   useEffect(() => {
     loadJadualWaktu();
+  }, []);
+
+  async function loadSpecialActivities() {
+    if (LOCAL_ACTIVITY_PREVIEW) return;
+    try {
+      const readActivities = httpsCallable(getFunctions(app, "us-central1"), "dapatkanAktivitiKhas");
+      const result = await readActivities();
+      if (!Array.isArray(result.data?.activities)) throw new Error("Respons aktiviti tidak sah.");
+      setSpecialActivities(result.data.activities);
+      setActivitiesState("ready");
+    } catch (error) {
+      console.error("Ralat mendapatkan aktiviti khas:", error);
+      setActivitiesState("error");
+    }
+  }
+
+  useEffect(() => {
+    loadSpecialActivities();
+    const timer = setInterval(loadSpecialActivities, 30000);
+    window.addEventListener("focus", loadSpecialActivities);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", loadSpecialActivities);
+    };
   }, []);
 
   useEffect(() => {
@@ -505,6 +485,24 @@ const themeChartColors = theme === "dark"
   }, []);
 
   const today = getTodayInfo();
+  const todayISO = today.tarikh.split("/").reverse().join("-");
+  async function saveSpecialActivities(activities) {
+    if (LOCAL_ACTIVITY_PREVIEW) {
+      window.localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(activities));
+      setSpecialActivities(activities);
+      return;
+    }
+    if (!isAdminLoggedIn) throw new Error("Sila log masuk sebagai admin.");
+    const added = activities.find((item) => !specialActivities.some((existing) => existing.id === item.id));
+    const removed = specialActivities.find((item) => !activities.some((existing) => existing.id === item.id));
+    if (added) {
+      await httpsCallable(getFunctions(app, "us-central1"), "simpanAktivitiKhas")({ activity: added });
+      setSpecialActivities((prev) => [...prev.filter((item) => item.id !== added.id), added]);
+    } else if (removed) {
+      await httpsCallable(getFunctions(app, "us-central1"), "batalAktivitiKhas")({ date: removed.date, activityId: removed.id });
+      setSpecialActivities((prev) => prev.filter((item) => item.id !== removed.id));
+    }
+  }
   const kelasNames = useMemo(() => kelasList.map((kelas) => kelas.nama), [kelasList]);
 
   const masaListPaparan = useMemo(
@@ -528,7 +526,7 @@ const themeChartColors = theme === "dark"
   );
 
 const semuaKelasTiadaRekodHariIni =
-  kelasNames.length > 0 && rekodHariIni.length === 0;
+  kelasNames.length > 0 && rekodHariIni.length === 0 && !specialActivities.some((activity) => activity.date === todayISO);
 
   const senaraiLaporanPaparan = useMemo(() => {
     const laporanDenganPdf = new Set(
@@ -589,7 +587,8 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       kelas,
       today.hari,
       today.tarikh,
-      rekodHariIni
+      rekodHariIni,
+      specialActivities
     );
 
     return {
@@ -599,7 +598,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       sitIn: dataKelas.filter((item) => item.jenisGuru === "Guru Sit-in").length,
       ...statistikWaktu
     };
-  }), [rekodHariIni, kelasNames, today.hari, today.tarikh]);
+  }), [rekodHariIni, kelasNames, today.hari, today.tarikh, specialActivities]);
 
   const analisisDipilih = selectedKelas ? analisisKelas.filter((item) => item.kelas === selectedKelas) : analisisKelas;
 
@@ -640,28 +639,21 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     const now = new Date();
     const bulanSemasaIndex = now.getFullYear() * 12 + now.getMonth() + 1;
 
+    function ensureMonth(bulan) {
+      if (!group[bulan]) group[bulan] = {
+        bulan, jumlah: 0, guruMP: 0, sitIn: 0, kelas: {}, guruSitIn: {},
+        guruMasuk: {}, kelasSitIn: {}, kelasKosong: {}, rekodIkutTarikh: {}
+      };
+      return group[bulan];
+    }
+
     rekod.forEach((item) => {
       const bulan = getMonthYear(item.tarikh);
       const [bulanNombor, tahunNombor] = bulan.split("/").map(Number);
       const bulanIndex = tahunNombor * 12 + bulanNombor;
       if (bulan === "Tidak dikenal pasti" || !Number.isFinite(bulanIndex) || bulanIndex > bulanSemasaIndex) return;
 
-      if (!group[bulan]) {
-        group[bulan] = {
-          bulan,
-          jumlah: 0,
-          guruMP: 0,
-          sitIn: 0,
-          kelas: {},
-          guruSitIn: {},
-          guruMasuk: {},
-          kelasSitIn: {},
-          kelasKosong: {},
-          rekodIkutTarikh: {}
-        };
-      }
-
-      const data = group[bulan];
+      const data = ensureMonth(bulan);
       const tarikh = item.tarikh || "Tidak dikenal pasti";
 
       data.jumlah += 1;
@@ -680,6 +672,12 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       }
     });
 
+    specialActivities.filter((activity) => activity.date <= todayISO).forEach((activity) => {
+      const tarikh = activity.date.split("-").reverse().join("/");
+      const data = ensureMonth(getMonthYear(tarikh));
+      if (!data.rekodIkutTarikh[tarikh]) data.rekodIkutTarikh[tarikh] = [];
+    });
+
     Object.values(group).forEach((bulan) => {
       const kelasUntukAnalisis =
         kelasNames.length > 0 ? kelasNames : Object.keys(bulan.kelas);
@@ -691,11 +689,13 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       Object.entries(bulan.rekodIkutTarikh).forEach(([tarikh, rekodTarikh]) => {
         // Jika tiada sebarang rekod pada hari tersebut, hari itu dianggap tidak aktif/cuti
         // dan tidak dimasukkan dalam pengiraan bulanan.
-        if (rekodTarikh.length === 0) return;
+        const adaAktiviti = specialActivities.some((activity) => activity.date === tarikh.split("/").reverse().join("-"));
+        if (rekodTarikh.length === 0 && !adaAktiviti) return;
 
         kelasUntukAnalisis.forEach((kelas) => {
           const adaRekodKelas = rekodTarikh.some((item) => item.kelas === kelas);
-          if (!adaRekodKelas) {
+          const statistik = kiraKehadiranWaktuKelas(kelas, getHariFromTarikh(tarikh), tarikh, rekodTarikh, specialActivities);
+          if (!adaRekodKelas && statistik.jumlahWaktu > 0) {
             bulan.kelasKosong[kelas] = (bulan.kelasKosong[kelas] || 0) + 1;
           }
         });
@@ -710,6 +710,26 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       bulan.peratusGuruMasuk = bulan.jumlah > 0 ? ((bulan.guruMP / bulan.jumlah) * 100).toFixed(1) : 0;
       bulan.peratusGuruTidakMasuk = bulan.jumlah > 0 ? ((bulan.sitIn / bulan.jumlah) * 100).toFixed(1) : 0;
 
+      {
+        let wajib = 0;
+        let daftar = 0;
+        let dikecualikan = 0;
+        const kelasWajib = new Set();
+        Object.entries(bulan.rekodIkutTarikh).forEach(([tarikh, records]) => {
+          kelasUntukAnalisis.forEach((kelas) => {
+            const stats = kiraKehadiranWaktuKelas(kelas, getHariFromTarikh(tarikh), tarikh, records, specialActivities);
+            wajib += stats.jumlahWaktu;
+            daftar += stats.waktuDaftar;
+            dikecualikan += stats.waktuDikecualikan;
+            if (stats.jumlahWaktu > 0) kelasWajib.add(kelas);
+          });
+        });
+        bulan.peratusGuruMasuk = wajib ? ((daftar / wajib) * 100).toFixed(1) : "-";
+        bulan.peratusGuruTidakMasuk = wajib ? (((wajib - daftar) / wajib) * 100).toFixed(1) : "-";
+        bulan.waktuDikecualikan = dikecualikan;
+        bulan.jumlahKelasTiadaRekod = kelasUntukAnalisis.filter((kelas) => kelasWajib.has(kelas) && !bulan.kelas[kelas]).length;
+      }
+
       bulan.kelasPalingKosong = Object.entries(bulan.kelasKosong)
         .filter(([, jumlah]) => jumlah > 0)
         .sort((a, b) => b[1] - a[1])[0];
@@ -719,7 +739,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
     });
 
     return Object.values(group).sort((a, b) => b.bulan.localeCompare(a.bulan));
-  }, [rekod, kelasNames]);
+  }, [rekod, kelasNames, specialActivities, todayISO]);
 
   const chartBulananData = useMemo(() => {
     return laporanBulanan
@@ -1077,7 +1097,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       .join("||");
   }
 
-  function binaRekodSlotHarian({ kelasNama, hari, rekodHarian }) {
+  function binaRekodSlotHarian({ kelasNama, hari, tarikh, rekodHarian }) {
     const rows = getMasaPaparanKelas(kelasNama, hari).map((masa) => {
       const isRehatRow = masa.includes("REHAT");
       const isPerhimpunanRow = isPerhimpunanSelasa(hari, masa);
@@ -1103,6 +1123,18 @@ data = data.filter((item) => item.tarikh === today.tarikh);
           guruYangDiganti: "-",
           jenisGuru: "REHAT",
           masaHantar: "-"
+        };
+      }
+
+      const activity = getSlotActivity(specialActivities, tarikh, kelasNama, masa);
+      if (activity) {
+        return {
+          isActivityRow: true, canMerge: false, mula, tamat, masa, kelas: kelasNama,
+          mataPelajaran: getJadualPadanan({ hari, kelas: kelasNama, masa })?.mataPelajaran || "-",
+          guru: [activity.title, ...rekodSlot.map((item) => item.guru)].join("\n"),
+          jenisGuru: [activity.type, ...rekodSlot.map((item) => item.jenisGuru)].filter(Boolean).join("\n"),
+          guruYangDiganti: gabungNilaiUnik(rekodSlot, "guruYangDiganti"),
+          masaHantar: getMasaHantarTerawal(rekodSlot)
         };
       }
 
@@ -1226,7 +1258,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
 
   function compileRekodBulananPDF() {
-    if (!isAdminLoggedIn) return;
+    if (!isAdminLoggedIn && !LOCAL_ACTIVITY_PREVIEW) return;
 
     if (!compileBulan || !compileTahun) {
       setMessage("Sila pilih bulan dan tahun terlebih dahulu.");
@@ -1278,7 +1310,8 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
         const hari = getHariFromTarikh(tarikh);
         const rekodTarikhSemuaKelas = rekodBulanIni.filter((item) => item.tarikh === tarikh);
-        const hariTidakAktif = rekodTarikhSemuaKelas.length === 0;
+        const adaAktiviti = specialActivities.some((activity) => activity.date === tarikh.split("/").reverse().join("-"));
+        const hariTidakAktif = rekodTarikhSemuaKelas.length === 0 && !adaAktiviti;
 
         const rekodHarian =
           hariTidakAktif
@@ -1289,7 +1322,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
         const rekodSlotHarian = hariTidakAktif
           ? []
-          : binaRekodSlotHarian({ kelasNama, hari, rekodHarian });
+          : binaRekodSlotHarian({ kelasNama, hari, tarikh, rekodHarian });
 
         tambahHeaderCompilePDF(docPdf, {
           tarikh,
@@ -1352,7 +1385,9 @@ data = data.filter((item) => item.tarikh === today.tarikh);
               y = tambahHeaderJadualCompilePDF(docPdf, 60);
             }
 
-            if (item.isRehatRow || item.isPerhimpunanRow) {
+            if (item.isActivityRow) {
+              docPdf.setFillColor(224, 242, 254);
+            } else if (item.isRehatRow || item.isPerhimpunanRow) {
               docPdf.setFillColor(254, 243, 199);
             } else if (index % 2 === 0) {
               docPdf.setFillColor(248, 250, 252);
@@ -1640,6 +1675,10 @@ function kiraStatistikLaporan(laporan) {
 async function janaLaporanBulananManual() {
 
   if (!isAdminLoggedIn) return;
+  if (LOCAL_ACTIVITY_PREVIEW) {
+    setMessage("Pratonton local: laporan automatik Firebase tidak diubah. Gunakan Jana PDF Rekod untuk melihat pengecualian aktiviti.");
+    return;
+  }
 
   try {
 
@@ -1762,6 +1801,7 @@ useEffect(() => {
   localStorage.setItem(storageKey, "1");
 
   async function janaAuto() {
+  if (LOCAL_ACTIVITY_PREVIEW) return;
     try {
       const docRef = await addDoc(collection(db, LAPORAN_COLLECTION), {
         tajuk: `Laporan Bulan ${bulanNama}`,
@@ -1848,6 +1888,10 @@ useEffect(() => {
           </div>
         </div>
 
+        {LOCAL_ACTIVITY_PREVIEW && <p className="rounded-lg bg-amber-100 p-3 text-sm text-amber-800">Pratonton local aktiviti khas. Pengecualian disimpan dalam browser ini sahaja dan belum digunakan di app sekolah.</p>}
+        {activitiesState === "loading" && <p role="status" className="text-sm text-slate-600">Memuatkan pengecualian aktiviti...</p>}
+        {activitiesState === "error" && <div role="alert" className="rounded-lg bg-amber-100 p-3 text-sm text-amber-800">Pengecualian aktiviti gagal dikemas kini. Status slot dan peratus mungkin tidak terkini. <button type="button" className="font-bold underline" onClick={loadSpecialActivities}>Cuba semula</button></div>}
+
         {activeTab === "pemantauan" && <DailyMonitoring
           classes={kelasNames}
           records={rekodHariIni}
@@ -1858,6 +1902,7 @@ useEffect(() => {
           online={isOnlineDb}
           timetableState={timetableState}
           reloadTimetable={loadJadualWaktu}
+          activities={specialActivities}
         />}
 
         {activeTab === "rekod" && (
@@ -2159,6 +2204,7 @@ useEffect(() => {
                 {analisisDipilih.map((item) => (
                   <div key={item.kelas} className="rounded-3xl border border-slate-200 bg-white/70 p-4">
                     <h3 className="text-lg font-black text-slate-950">{item.kelas}</h3>
+                    {item.waktuDikecualikan > 0 && <p className="mt-2 rounded-lg bg-sky-100 p-2 text-sm text-sky-900">Aktiviti khas: {item.waktuDikecualikan} slot dikecualikan.{item.jumlahWaktu === 0 ? " Tiada rekod PdP diperlukan hari ini." : ""}</p>}
 
                     <div className="mt-3 grid grid-cols-3 gap-2 text-center text-sm">
                       <div className="rounded-2xl bg-slate-100 p-3">
@@ -2177,14 +2223,14 @@ useEffect(() => {
 
                     <div className="mt-3 grid grid-cols-2 gap-2 text-center text-sm">
                       <div className="rounded-2xl bg-green-100 p-3">
-                        <p className="font-black text-xl text-green-900">{item.peratusDaftar}%</p>
+                        <p className="font-black text-xl text-green-900">{item.jumlahWaktu === 0 ? "-" : `${item.peratusDaftar}%`}</p>
                         <p className="text-xs text-green-700">Mendaftar</p>
                         <p className="mt-1 text-[11px] text-green-700">
                           {item.waktuDaftar}/{item.jumlahWaktu} waktu
                         </p>
                       </div>
                       <div className="rounded-2xl bg-rose-100 p-3">
-                        <p className="font-black text-xl text-rose-900">{item.peratusTidakDaftar}%</p>
+                        <p className="font-black text-xl text-rose-900">{item.jumlahWaktu === 0 ? "-" : `${item.peratusTidakDaftar}%`}</p>
                         <p className="text-xs text-rose-700">Tidak Mendaftar</p>
                         <p className="mt-1 text-[11px] text-rose-700">
                           {item.waktuTidakDaftar}/{item.jumlahWaktu} waktu
@@ -2218,7 +2264,7 @@ useEffect(() => {
             <h2 className="mb-2 text-xl font-black text-slate-950">Laporan Bulanan Keseluruhan</h2>
             
 
-            {isAdminLoggedIn && (
+            {(isAdminLoggedIn || LOCAL_ACTIVITY_PREVIEW) && (
               <div className="mb-6 rounded-[2rem] border border-sky-100 bg-white/80 p-4">
                 <h3 className="mb-2 text-lg font-black text-slate-950">Compile Rekod Bulanan</h3>
                 <p className="mb-4 text-sm text-slate-600">
@@ -2405,16 +2451,17 @@ useEffect(() => {
                 {laporanBulanSemasa.map((bulan) => (
                   <div key={bulan.bulan} className="rounded-3xl border border-slate-200 p-4">
                     <h3 className="text-lg font-black text-slate-950">Bulan {bulan.bulan}</h3>
+                    {bulan.waktuDikecualikan > 0 && <p className="mt-2 text-sm text-sky-900">Aktiviti khas: {bulan.waktuDikecualikan} slot dikecualikan daripada pengiraan peratus.</p>}
 
                     <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       <div className="rounded-2xl bg-slate-100 p-4">
                         Jumlah Rekod: <strong>{bulan.jumlah}</strong>
                       </div>
                       <div className="rounded-2xl bg-emerald-100 p-4">
-                        Peratus Guru Sudah Merekod: <strong>{bulan.peratusGuruMasuk}%</strong>
+                        Peratus Guru Sudah Merekod: <strong>{bulan.peratusGuruMasuk === "-" ? "-" : `${bulan.peratusGuruMasuk}%`}</strong>
                       </div>
                       <div className="rounded-2xl bg-red-100 p-4">
-                        Peratus Guru Belum Merekod: <strong>{bulan.peratusGuruTidakMasuk}%</strong>
+                        Peratus Guru Belum Merekod: <strong>{bulan.peratusGuruTidakMasuk === "-" ? "-" : `${bulan.peratusGuruTidakMasuk}%`}</strong>
                       </div>
                     </div>
                   </div>
@@ -2423,6 +2470,11 @@ useEffect(() => {
             )}
           </div>
         )}
+
+        {activeTab === "admin" && (LOCAL_ACTIVITY_PREVIEW || isAdminLoggedIn) && <SpecialActivitiesAdmin
+          classes={kelasNames} activities={specialActivities} onChange={saveSpecialActivities}
+          todayISO={todayISO} getSlots={getActivitySlots} localPreview={LOCAL_ACTIVITY_PREVIEW} ready={activitiesState === "ready"}
+        />}
 
         {activeTab === "admin" && !isAdminLoggedIn && (
           <div className="mx-auto max-w-md rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm md:p-6">

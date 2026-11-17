@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const OpenAI = require("openai");
 
 admin.initializeApp();
+Object.assign(exports, require("./specialActivities").createActivityFunctions(admin));
 
 let openai = null;
 
@@ -180,6 +181,9 @@ function tambahNomborHalaman(doc, teksFooter = "Laporan MMI SK Batu 10, Sibu") {
 
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
+    const bottomMargin = doc.page.margins.bottom;
+    // Footer text sits below the content margin and must not create a new page.
+    doc.page.margins.bottom = 0;
 
     doc
       .font("Helvetica")
@@ -196,6 +200,7 @@ function tambahNomborHalaman(doc, teksFooter = "Laporan MMI SK Batu 10, Sibu") {
     });
 
     doc.fillColor("#000000");
+    doc.page.margins.bottom = bottomMargin;
   }
 }
 
@@ -437,6 +442,8 @@ async function janaRumusanAI({
   topGuru,
   topSitInKelas,
   guruTiadaRekod,
+  coverage,
+  activities,
 }) {
   try {
     const prompt = `
@@ -462,6 +469,10 @@ Data laporan:
     }
 - Guru tanpa rekod sepanjang bulan: ${guruTiadaRekod.length} orang
 - Jumlah guru tanpa rekod sepanjang bulan: ${guruTiadaRekod.length}
+- Slot PdP wajib (tidak termasuk aktiviti khas): ${coverage.required}
+- Slot sudah direkod: ${coverage.recorded}; slot tanpa rekod: ${coverage.missing}
+- Slot aktiviti khas dikecualikan: ${coverage.exempt}
+- Aktiviti khas: ${activities.map((activity) => `${activity.date}: ${activity.title} (${activity.classes.join(", ")})`).join("; ") || "Tiada"}
 - Kelas sit-in tertinggi: ${
       topSitInKelas
         .map((item) => `${item.nama} (${item.jumlah})`)
@@ -480,6 +491,7 @@ Arahan penulisan:
 - Jangan sebut nama individu guru yang tiada rekod dalam rumusan pemantauan.
 - Jangan gunakan frasa "selepas pengecualian" dalam laporan.
 - Jangan reka data baharu di luar data yang diberi.
+- Slot aktiviti khas tidak dianggap kegagalan merekod atau rekod pengajaran biasa. Jangan membuat kesimpulan guru tidak hadir daripada ketiadaan rekod.
 `;
 
     const response = await getOpenAI().chat.completions.create({
@@ -518,6 +530,8 @@ function janaPDFLaporan({
   topSitInKelas,
   guruTiadaRekod,
   rumusanAI,
+  coverage,
+  activities,
 }) {
   const namaFail = `laporan_${bulan}_${tahun}.pdf`;
   const tempFilePath = path.join(os.tmpdir(), namaFail);
@@ -732,6 +746,22 @@ lukisPieRingkas(
       }
     );
 
+  if (activities.length > 0) {
+    resetKedudukan(docPdf);
+    pastikanRuang(docPdf, 110);
+    docPdf.moveDown().font("Helvetica-Bold").fontSize(11).fillColor("#0f172a").text("Aktiviti Khas dan Pengecualian Rekod", 50, docPdf.y, { width: docPdf.page.width - 100 });
+    docPdf.moveDown(0.5).font("Helvetica").fontSize(10).fillColor("#111827").text(
+      `${coverage.exempt} slot aktiviti khas dikecualikan. Slot PdP wajib: ${coverage.required}; sudah direkod: ${coverage.recorded}; belum direkod: ${coverage.missing}. Aktiviti khas bukan rekod pengajaran dan tidak dikira sebagai kegagalan merekod.`,
+      50, docPdf.y, { width: docPdf.page.width - 100, lineGap: 4 }
+    );
+    for (const activity of activities) {
+      const text = `${activity.date} - ${activity.title}\nKelas: ${activity.classes.join(", ")}\n${activity.allDay ? "Sepanjang hari" : activity.slots.join(", ")}`;
+      const height = docPdf.heightOfString(text, { width: docPdf.page.width - 100, lineGap: 3 });
+      pastikanRuang(docPdf, height + 25);
+      docPdf.moveDown(0.5).font("Helvetica").fontSize(10).fillColor("#111827").text(text, 50, docPdf.y, { width: docPdf.page.width - 100, lineGap: 3 });
+    }
+  }
+
   buangMukaSuratKosongAkhir(docPdf);
   tambahNomborHalaman(docPdf);
 
@@ -743,8 +773,12 @@ lukisPieRingkas(
 }
 
 async function dapatkanDataLaporan(bulan, tahun) {
-  const rekodSnapshot = await admin.firestore().collection("rekod_mmi").get();
-  const guruSnapshot = await admin.firestore().collection("senarai_guru").get();
+  const [rekodSnapshot, guruSnapshot, kelasSnapshot, activitySnapshot] = await Promise.all([
+    admin.firestore().collection("rekod_mmi").get(),
+    admin.firestore().collection("senarai_guru").get(),
+    admin.firestore().collection("senarai_kelas").get(),
+    admin.firestore().collection("aktiviti_khas_harian").get(),
+  ]);
   const rekodBulanIni = [];
   const senaraiGuru = [];
 
@@ -804,7 +838,18 @@ async function dapatkanDataLaporan(bulan, tahun) {
     })
     .sort((a, b) => a.localeCompare(b, "ms", { numeric: true }));
 
+  const { calculateCoverage } = await import("./activityRules.mjs");
+  const todayISO = dapatkanTarikhMalaysia().split("/").reverse().join("-");
+  const monthNumber = Array.from({ length: 12 }, (_, i) => i + 1).find((value) => dapatkanNamaBulan(value).toLowerCase() === bulan.toLowerCase());
+  const monthPrefix = `${tahun}-${String(monthNumber).padStart(2, "0")}`;
+  const activities = activitySnapshot.docs.flatMap((doc) => doc.data().activities || [])
+    .filter((activity) => activity.date.startsWith(monthPrefix) && activity.date <= todayISO);
+  const classes = [...new Set(kelasSnapshot.docs.map((doc) => doc.get("nama")).filter(Boolean))];
+  const coverage = calculateCoverage({ records: rekodBulanIni, activities, classes, todayISO });
+
   return {
+    activities,
+    coverage,
     rekodBulanIni,
     jumlahRekod,
     jumlahGMP,
@@ -818,6 +863,8 @@ async function dapatkanDataLaporan(bulan, tahun) {
 
 async function janaDanSimpanLaporan({ bulan, tahun, manual = false }) {
   const {
+    activities,
+    coverage,
     jumlahRekod,
     jumlahGMP,
     jumlahSitIn,
@@ -828,6 +875,8 @@ async function janaDanSimpanLaporan({ bulan, tahun, manual = false }) {
   } = await dapatkanDataLaporan(bulan, tahun);
 
   const rumusanAI = await janaRumusanAI({
+    activities,
+    coverage,
     bulan,
     tahun,
     jumlahRekod,
@@ -840,6 +889,8 @@ async function janaDanSimpanLaporan({ bulan, tahun, manual = false }) {
   });
 
   const tempFilePath = await janaPDFLaporan({
+    activities,
+    coverage,
     bulan,
     tahun,
     jumlahRekod,
@@ -884,6 +935,8 @@ async function janaDanSimpanLaporan({ bulan, tahun, manual = false }) {
     guruTiadaRekod,
     rumusanAI,
     status: "Selesai",
+    activities,
+    coverage,
     manual,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
