@@ -307,6 +307,7 @@ export default function BorangMMIApp() {
   const [isSavingJadual, setIsSavingJadual] = useState(false);
   const [slotMessageMasa, setSlotMessageMasa] = useState("");
   const [submitPreview, setSubmitPreview] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [rekodMilikPeranti, setRekodMilikPeranti] = useState(loadRekodMilikStorage);
   const [minitSemasa, setMinitSemasa] = useState(getMinitSemasa);
   const [activeTab, setActiveTab] = useState("rekod");
@@ -486,6 +487,14 @@ const themeChartColors = theme === "dark"
 
   const today = getTodayInfo();
   const todayISO = today.tarikh.split("/").reverse().join("-");
+  useEffect(() => {
+    const blocked = form.masa.filter((masa) => getSlotActivity(specialActivities, today.tarikh, form.kelas, masa));
+    if (blocked.length) {
+      setForm((prev) => ({ ...prev, masa: prev.masa.filter((masa) => !blocked.includes(masa)) }));
+      setMessage("Pilihan waktu dibuang kerana slot tersebut telah didaftarkan untuk aktiviti khas.");
+    }
+    setSubmitPreview((prev) => prev?.masa.some((masa) => getSlotActivity(specialActivities, today.tarikh, prev.kelas, masa)) ? null : prev);
+  }, [specialActivities, today.tarikh, form.kelas, form.masa]);
   async function saveSpecialActivities(activities) {
     if (LOCAL_ACTIVITY_PREVIEW) {
       window.localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(activities));
@@ -854,7 +863,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       if (field !== "kelas") return { ...prev, [field]: value };
 
       const masaDibenarkan = getMasaPaparanKelas(value, today.hari).filter(
-        (masa) => !isSlotTidakBolehPilih(today.hari, masa)
+        (masa) => !isSlotTidakBolehPilih(today.hari, masa) && !getSlotActivity(specialActivities, today.tarikh, value, masa)
       );
 
       return {
@@ -868,6 +877,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
   }
 
   function toggleMasa(value) {
+    if (activitiesState !== "ready" || getSlotActivity(specialActivities, today.tarikh, form.kelas, value)) return;
     const targetIndex = masaListPaparan.indexOf(value);
 
     if (
@@ -892,6 +902,10 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 
   async function handleSubmit(e) {
   e.preventDefault();
+  if (activitiesState !== "ready") { setMessage("Sila tunggu pengecualian aktiviti selesai dimuatkan atau cuba semula."); return; }
+  if (form.masa.some((masa) => getSlotActivity(specialActivities, today.tarikh, form.kelas, masa))) {
+    setMessage("Slot aktiviti khas tidak boleh direkodkan. Sila pilih waktu lain."); return;
+  }
 
   if (!form.kelas || !form.guru || form.masa.length === 0 || !form.jenisGuru) {
     setMessage("Sila lengkapkan semua maklumat.");
@@ -924,7 +938,12 @@ data = data.filter((item) => item.tarikh === today.tarikh);
 }
 
   async function confirmSubmit() {
-  if (!submitPreview) return;
+  if (!submitPreview || isSubmitting) return;
+  if (activitiesState !== "ready" || submitPreview.masa.some((masa) => getSlotActivity(specialActivities, getTodayInfo().tarikh, submitPreview.kelas, masa))) {
+    setMessage("Slot aktiviti khas tidak boleh direkodkan. Sila semak pilihan waktu.");
+    setSubmitPreview(null);
+    return;
+  }
 
   const selectedClass = submitPreview.kelas;
   const info = getTodayInfo();
@@ -941,9 +960,12 @@ data = data.filter((item) => item.tarikh === today.tarikh);
   );
 
   try {
+    setIsSubmitting(true);
     const tokenPadam = janaTokenPadamRekod();
     const tokenPadamHash = await hashTokenPadamRekod(tokenPadam);
-    const docRef = await addDoc(collection(db, REKOD_COLLECTION), {
+    const docRef = doc(collection(db, REKOD_COLLECTION));
+    await httpsCallable(getFunctions(app, "us-central1"), "hantarRekodMMI")({
+      recordId: docRef.id,
       tarikh: info.tarikh,
       hari: info.hari,
       masaHantar: info.masaHantar,
@@ -957,9 +979,7 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       jenisGuru: submitPreview.jenisGuru,
       guruYangDiganti: submitPreview.guruYangDiganti,
       mataPelajaran: mataPelajaranRekod,
-      tokenPadamHash,
-
-      createdAt: serverTimestamp()
+      tokenPadamHash
     });
 
     setRekodMilikPeranti((prev) => {
@@ -991,9 +1011,10 @@ data = data.filter((item) => item.tarikh === today.tarikh);
       `Rekod MMI berjaya dihantar. Dashboard kini memaparkan rekod untuk ${selectedClass} sahaja.`
     );
 
-  } catch {
-    setMessage("Rekod gagal dihantar. Semak Firebase atau internet.");
-  }
+  } catch (error) {
+    setMessage(error?.message || "Rekod gagal dihantar. Semak Firebase atau internet.");
+    if (error?.code === "functions/failed-precondition") { setSubmitPreview(null); await loadSpecialActivities(); }
+  } finally { setIsSubmitting(false); }
 }
 
   function exportCSV() {
@@ -1940,7 +1961,8 @@ useEffect(() => {
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
                     {masaListPaparan.map((masa) => {
                       const checked = form.masa.includes(masa);
-                      const isTidakBolehPilih = isSlotTidakBolehPilih(today.hari, masa);
+                      const activity = getSlotActivity(specialActivities, today.tarikh, form.kelas, masa);
+                      const isTidakBolehPilih = isSlotTidakBolehPilih(today.hari, masa) || Boolean(activity) || activitiesState !== "ready";
                       return (
                         <div key={masa} className="space-y-2">
                           <label
@@ -1959,9 +1981,9 @@ useEffect(() => {
                               disabled={isTidakBolehPilih}
                               onChange={() => !isTidakBolehPilih && toggleMasa(masa)}
                             />
-                            <span className="text-sm font-semibold">
+                            <span className="min-w-0 break-words text-sm font-semibold">
                               {getLabelMasaPaparan(today.hari, masa)}
-                              
+                              {activity && <span className="mt-1 block font-bold text-sky-900">{activity.type}: {activity.title} (Rekod disekat)</span>}
                             </span>
                           </label>
                           {message === SLOT_TIME_MESSAGE && slotMessageMasa === masa && (
@@ -2048,6 +2070,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => setSubmitPreview(null)}
+                        disabled={isSubmitting}
                         className="h-12 rounded-2xl border border-slate-200 px-4 text-sm font-black text-slate-700"
                       >
                         Semak Semula
@@ -2055,9 +2078,10 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={confirmSubmit}
+                        disabled={isSubmitting || activitiesState !== "ready"}
                         className="h-12 rounded-2xl bg-sky-700 px-4 text-sm font-black text-white hover:bg-sky-800"
                       >
-                        Sahkan Hantar
+                        {isSubmitting ? "Menghantar..." : "Sahkan Hantar"}
                       </button>
                     </div>
                   </div>

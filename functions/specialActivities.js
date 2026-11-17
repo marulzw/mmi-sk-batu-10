@@ -1,6 +1,6 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 
-function createActivityFunctions(admin) {
+function createActivityFunctions(admin, getNow = () => new Date()) {
   const options = { region: "us-central1", cors: true };
   const collection = () => admin.firestore().collection("aktiviti_khas_harian");
 
@@ -15,6 +15,46 @@ function createActivityFunctions(admin) {
   }
 
   return {
+    hantarRekodMMI: onCall(options, async (request) => {
+      const input = request.data || {};
+      const { kelas, guru, jenisGuru, tokenPadamHash, recordId } = input;
+      const times = input.masaArray;
+      if (![kelas, guru].every((value) => typeof value === "string" && value.trim() && value.length <= 100) ||
+        !["Guru Mata Pelajaran", "Guru Sit-in"].includes(jenisGuru) ||
+        typeof recordId !== "string" || !/^[\w-]{16,64}$/.test(recordId) ||
+        typeof tokenPadamHash !== "string" || !/^[a-f0-9]{64}$/.test(tokenPadamHash) ||
+        !Array.isArray(times) || !times.length || times.length > 12 || times.some((value) => typeof value !== "string") ||
+        (jenisGuru === "Guru Sit-in" && (typeof input.guruYangDiganti !== "string" || !input.guruYangDiganti.trim() || input.guruYangDiganti.length > 100))) {
+        throw new HttpsError("invalid-argument", "Maklumat rekod tidak lengkap atau tidak sah.");
+      }
+      const now = getNow();
+      const tarikh = new Intl.DateTimeFormat("ms-MY", { timeZone: "Asia/Kuala_Lumpur", day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
+      const isoDate = tarikh.split("/").reverse().join("-");
+      if (input.tarikh !== tarikh) throw new HttpsError("failed-precondition", "Tarikh telah berubah. Sila muat semula borang.");
+      const { getActivitySlots, getSlotActivity } = await import("./activityRules.mjs");
+      const validTimes = getActivitySlots(kelas, isoDate);
+      if (times.some((masa) => !validTimes.includes(masa))) throw new HttpsError("invalid-argument", "Slot waktu tidak sah untuk kelas ini.");
+      const recordRef = admin.firestore().collection("rekod_mmi").doc(recordId);
+      await admin.firestore().runTransaction(async (transaction) => {
+        const [snapshot, record] = await Promise.all([transaction.get(collection().doc(isoDate)), transaction.get(recordRef)]);
+        const activities = snapshot.exists ? snapshot.data().activities || [] : [];
+        const blocked = times.map((masa) => getSlotActivity(activities, tarikh, kelas, masa)).find(Boolean);
+        if (blocked) throw new HttpsError("failed-precondition", `Rekod disekat: ${blocked.title}. Sila pilih slot lain.`);
+        if (record.exists) {
+          if (record.data().tokenPadamHash === tokenPadamHash) return;
+          throw new HttpsError("already-exists", "ID rekod telah digunakan.");
+        }
+        transaction.set(recordRef, {
+          tarikh, hari: new Intl.DateTimeFormat("ms-MY", { timeZone: "Asia/Kuala_Lumpur", weekday: "long" }).format(now),
+          masaHantar: new Intl.DateTimeFormat("ms-MY", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(now),
+          kelas, guru, jenisGuru, masaArray: [...new Set(times)], masa: [...new Set(times)].join(", "), tokenPadamHash,
+          guruYangDiganti: jenisGuru === "Guru Sit-in" ? input.guruYangDiganti : "",
+          mataPelajaran: String(input.mataPelajaran || "").slice(0, 500), createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      return { success: true, recordId };
+    }),
+
     dapatkanAktivitiKhas: onCall(options, async () => {
       const snapshot = await collection().get();
       return { activities: snapshot.docs.flatMap((doc) => (doc.data().activities || []).map(publicActivity)) };

@@ -20,11 +20,34 @@ function fixture() {
   };
   const firestore = () => db;
   firestore.FieldValue = { serverTimestamp: () => "server-time" };
-  return { functions: createActivityFunctions({ firestore }), store };
+  return { functions: createActivityFunctions({ firestore }, () => new Date("2026-11-17T06:30:00Z")), store };
 }
 
 const activity = { id: "activity-test-123456", date: "2026-11-17", title: "Lawatan Tahun 6", type: "Aktiviti Luar Sekolah", classes: ["6 Bestari", "6 Inovatif"], allDay: true, slots: [] };
 const adminRequest = (data) => ({ auth: { uid: "admin-test" }, data });
+const submission = { recordId: "teacher-record-123456", tokenPadamHash: "a".repeat(64), tarikh: "17/11/2026", kelas: "6 Bestari", guru: "Guru A", jenisGuru: "Guru Mata Pelajaran", masaArray: ["7:45 - 8:15"] };
+
+test("submissions reject exempt slots atomically, preserve delete token and allow cancellation", async () => {
+  const { functions, store } = fixture();
+  await functions.simpanAktivitiKhas.run(adminRequest({ activity: { ...activity, allDay: false, slots: ["7:45 - 8:15"] } }));
+  await assert.rejects(functions.hantarRekodMMI.run({ data: { ...submission, masaArray: ["7:45 - 8:15", "8:15 - 8:45"] } }), { code: "failed-precondition" });
+  assert.equal(store.has(submission.recordId), false);
+  const allowed = { ...submission, masaArray: ["8:15 - 8:45"] };
+  await functions.hantarRekodMMI.run({ data: allowed });
+  assert.equal(store.get(submission.recordId).tokenPadamHash, submission.tokenPadamHash);
+  await functions.batalAktivitiKhas.run(adminRequest({ date: activity.date, activityId: activity.id }));
+  await functions.hantarRekodMMI.run({ data: { ...submission, recordId: "second-record-123456" } });
+  assert.equal(store.get("second-record-123456").kelas, "6 Bestari");
+  await assert.rejects(functions.hantarRekodMMI.run({ data: { ...submission, tarikh: "16/11/2026" } }), { code: "failed-precondition" });
+});
+
+test("full-day exemptions block selected classes while other classes may record", async () => {
+  const { functions, store } = fixture();
+  await functions.simpanAktivitiKhas.run(adminRequest({ activity: { ...activity, classes: ["6 Bestari"] } }));
+  await assert.rejects(functions.hantarRekodMMI.run({ data: submission }), { code: "failed-precondition" });
+  await functions.hantarRekodMMI.run({ data: { ...submission, kelas: "6 Inovatif" } });
+  assert.equal(store.get(submission.recordId).kelas, "6 Inovatif");
+});
 
 test("only authenticated administrators can save or cancel", async () => {
   const { functions, store } = fixture();

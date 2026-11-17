@@ -91,6 +91,10 @@ The app is structured around tabs:
   clients refresh it every 30 seconds and when their window regains focus.
 - Exempt slots are excluded from required/missing instructional counts. Existing teacher
   submissions are retained. Recess stays separate from activity exemptions.
+- Record-form slots display the activity name and are disabled during exemptions.
+  New submissions use `hantarRekodMMI`, which checks the activity date document in the
+  same Firestore transaction as the record write. Users must refresh older app versions
+  to use this submission flow.
 - Daily monitoring, daily analysis, compiled PDFs and server monthly reports include exemptions.
   Previously generated PDFs are unchanged until regenerated.
 - `functions/activityRules.mjs` contains the shared time-slot and exemption rules.
