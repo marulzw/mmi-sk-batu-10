@@ -1983,7 +1983,7 @@ useEffect(() => {
                             />
                             <span className="min-w-0 break-words text-sm font-semibold">
                               {getLabelMasaPaparan(today.hari, masa)}
-                              {activity && <span className="mt-1 block font-bold text-sky-900">{activity.type}: {activity.title} (Rekod disekat)</span>}
+                              {activity && <span className="mt-1 block font-bold text-sky-900">{activity.type}: {activity.title}</span>}
                             </span>
                           </label>
                           {message === SLOT_TIME_MESSAGE && slotMessageMasa === masa && (
