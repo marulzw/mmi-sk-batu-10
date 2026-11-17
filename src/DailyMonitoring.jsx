@@ -23,7 +23,13 @@ function RecordDetails({ records }) {
   ])).values()];
   return <ul className="space-y-2">{unique.map((record, index) => <li key={index}>
     <p className="font-bold">{record.guru}</p>
-    <p className="text-xs text-slate-500">{record.jenisGuru}{record.guruYangDiganti ? ` (ganti ${record.guruYangDiganti})` : ""}</p>
+    <p className="mt-1 text-xs">
+      <span className="text-slate-500">Jenis Guru: </span>
+      <span className={`inline-block max-w-full rounded px-2 py-1 font-bold ${record.jenisGuru === "Guru Sit-in" ? "bg-amber-100 text-amber-800" : record.jenisGuru === "Guru Mata Pelajaran" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+        {record.jenisGuru || "Tidak dinyatakan"}
+      </span>
+    </p>
+    {record.jenisGuru === "Guru Sit-in" && <p className="mt-1 text-xs text-slate-600">Guru Diganti: {record.guruYangDiganti || "Tidak dinyatakan"}</p>}
     <p className="text-xs text-slate-600">Hantar: {record.masaHantar || "-"}</p>
   </li>)}</ul>;
 }
